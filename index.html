@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#14122b">
+<title>복불복</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="app">
+
+  <!-- 홈: 참가자와 게임 고르기 -->
+  <section id="home" class="screen">
+    <header class="hero">
+      <h1>복불복</h1>
+      <p>오늘은 누가 걸릴까</p>
+    </header>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>참가자</h2>
+        <span id="player-count" class="muted"></span>
+      </div>
+      <ul id="players"></ul>
+      <button id="add-player" class="btn ghost">+ 참가자 추가</button>
+    </section>
+
+    <section class="panel">
+      <div class="field">
+        <label for="penalty">걸리면</label>
+        <input id="penalty" maxlength="20" placeholder="예: 커피 쏘기" enterkeyhint="done">
+      </div>
+      <div class="field">
+        <span>걸릴 사람 수</span>
+        <div class="stepper">
+          <button id="loser-minus" class="icon-btn" aria-label="줄이기">−</button>
+          <b id="loser-count">1</b>
+          <button id="loser-plus" class="icon-btn" aria-label="늘리기">+</button>
+        </div>
+      </div>
+    </section>
+
+    <h2 class="section-title">게임 고르기</h2>
+    <div class="games">
+      <button class="game-card" data-game="ladder"><span class="emoji">🪜</span><b>사다리 타기</b><small>자리를 고르고 내려가기</small></button>
+      <button class="game-card" data-game="roulette"><span class="emoji">🎡</span><b>룰렛</b><small>돌려서 멈춘 사람</small></button>
+      <button class="game-card" data-game="cards"><span class="emoji">🃏</span><b>카드 뽑기</b><small>한 장씩 뒤집기</small></button>
+      <button class="game-card" data-game="bomb"><span class="emoji">💣</span><b>시한폭탄</b><small>누르다 터지면 당첨</small></button>
+    </div>
+  </section>
+
+  <!-- 게임 화면 -->
+  <section id="game" class="screen" hidden>
+    <header class="game-head">
+      <button id="back" class="icon-btn" aria-label="뒤로">←</button>
+      <h2 id="game-title"></h2>
+    </header>
+    <div id="stage"></div>
+  </section>
+
+</main>
+<script src="app.js"></script>
+</body>
+</html>
