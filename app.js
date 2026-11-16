@@ -12,10 +12,10 @@ function loadState() {
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (s && Array.isArray(s.players) && s.players.length >= MIN_P) {
-      return { players: s.players.slice(0, MAX_P).map(String), losers: Number(s.losers) || 1, penalty: String(s.penalty || '') };
+      return { players: s.players.slice(0, MAX_P).map(String) };
     }
   } catch (e) { /* 저장소를 못 쓰는 환경이면 기본값 사용 */ }
-  return { players: ['', '', ''], losers: 1, penalty: '' };
+  return { players: ['', '', ''] };
 }
 const state = loadState();
 function persist() {
@@ -40,7 +40,6 @@ function shuffle(arr) {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pname = (i) => state.players[i].trim() || `${i + 1}번`;
 const color = (i) => PALETTE[i % PALETTE.length];
-const loserCount = () => Math.max(1, Math.min(state.losers, state.players.length - 1));
 const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) { /* 무시 */ } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -61,15 +60,7 @@ function renderPlayers() {
     </li>`).join('');
   $('#player-count').textContent = `${n}명`;
   $('#add-player').disabled = n >= MAX_P;
-  renderLosers();
 }
-function renderLosers() {
-  const k = loserCount();
-  $('#loser-count').textContent = k;
-  $('#loser-minus').disabled = k <= 1;
-  $('#loser-plus').disabled = k >= state.players.length - 1;
-}
-
 $('#players').addEventListener('input', (e) => {
   const i = e.target.dataset.i;
   if (i !== undefined) { state.players[+i] = e.target.value; persist(); }
@@ -85,10 +76,6 @@ $('#add-player').addEventListener('click', () => {
   state.players.push('');
   persist(); renderPlayers();
 });
-$('#loser-minus').addEventListener('click', () => { state.losers = loserCount() - 1; persist(); renderLosers(); });
-$('#loser-plus').addEventListener('click', () => { state.losers = loserCount() + 1; persist(); renderLosers(); });
-$('#penalty').value = state.penalty;
-$('#penalty').addEventListener('input', (e) => { state.penalty = e.target.value; persist(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
 
 function goHome() {
@@ -115,13 +102,13 @@ $('.games').addEventListener('click', (e) => {
 });
 $('#back').addEventListener('click', goHome);
 
-function showResult(losers) {
+function showResult(who) {
   buzz([120, 60, 240]);
   const el = document.createElement('section');
   el.className = 'result';
   el.innerHTML = `
-    <p class="result-label">${state.penalty.trim() ? esc(state.penalty.trim()) : '당첨'}</p>
-    <ul>${losers.map((i) => `<li style="--c:${color(i)}">${esc(pname(i))}</li>`).join('')}</ul>
+    <p class="result-label">당첨</p>
+    <p class="result-name" style="color:${color(who)}">${esc(pname(who))}</p>
     <div class="row">
       <button class="btn primary" data-act="again">한 번 더</button>
       <button class="btn" data-act="home">게임 고르기</button>
@@ -182,7 +169,6 @@ function traceLadder(rungs, start) {
 
 function ladderGame(token) {
   const n = state.players.length;
-  const k = loserCount();
   const taken = new Array(n).fill(-1);   // 자리 -> 참가자
   let turn = 0;
 
@@ -206,7 +192,7 @@ function ladderGame(token) {
   async function run() {
     const LEVELS = 10;
     const rungs = buildLadder(n, LEVELS);
-    const outcome = shuffle(Array.from({ length: n }, (_, i) => i < k));   // 도착 자리별 당첨 여부
+    const outcome = shuffle(Array.from({ length: n }, (_, i) => i === 0));   // 도착 자리별 당첨 여부 (당첨은 한 자리)
     const paths = [];                                                        // 참가자 순서대로
     const slotOf = new Array(n);
     taken.forEach((p, c) => { slotOf[p] = c; });
@@ -301,10 +287,8 @@ function ladderGame(token) {
     revealed.fill(true);
     draw(n, -1, 0);
     go.remove();
-    const losers = [];
-    for (let p = 0; p < n; p++) if (outcome[paths[p].end]) losers.push(p);
     $('#l-msg').textContent = '결과가 나왔습니다';
-    showResult(losers);
+    showResult(paths.findIndex((path) => outcome[path.end]));
   }
 
   renderPick();
@@ -312,14 +296,14 @@ function ladderGame(token) {
 
 /* ================= 2. 룰렛 ================= */
 function rouletteGame(token) {
-  const k = loserCount();
-  let remaining = state.players.map((_, i) => i);
-  const losers = [];
+  const n = state.players.length;
+  const TAU = Math.PI * 2;
+  const a = TAU / n;
+  const mod = (x) => ((x % TAU) + TAU) % TAU;
   let rot = 0;
-  let spinning = false;
 
   stage.innerHTML = `
-    <p class="turn" id="r-msg"></p>
+    <p class="turn" id="r-msg">화살표에 멈춘 사람이 당첨</p>
     <div class="wheel-wrap"><div class="pointer"></div><canvas id="wheel"></canvas></div>
     <button class="btn primary big" id="spin">돌리기</button>`;
   const size = Math.min(stage.clientWidth, 360);
@@ -328,58 +312,47 @@ function rouletteGame(token) {
   const btn = $('#spin');
   const pointer = $('.pointer', stage);
 
-  function setMsg() {
-    msg.textContent = k > 1 ? `${k}명 중 ${losers.length + 1}번째 당첨자를 뽑습니다` : '화살표에 멈춘 사람이 당첨';
-  }
   function draw() {
-    const m = remaining.length;
-    const a = (Math.PI * 2) / m;
     const R = size / 2 - 6;
     ctx.clearRect(0, 0, size, size);
     ctx.save();
     ctx.translate(size / 2, size / 2);
     ctx.rotate(rot - Math.PI / 2);
-    for (let i = 0; i < m; i++) {
+    for (let i = 0; i < n; i++) {
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, R, i * a, (i + 1) * a);
       ctx.closePath();
-      ctx.fillStyle = color(remaining[i]);
+      ctx.fillStyle = color(i);
       ctx.fill();
       ctx.strokeStyle = '#14122b'; ctx.lineWidth = 3; ctx.stroke();
       ctx.save();
       ctx.rotate((i + 0.5) * a);
       ctx.fillStyle = '#16122e';
-      ctx.font = `900 ${m > 7 ? 14 : 18}px system-ui, sans-serif`;
+      ctx.font = `900 ${n > 7 ? 14 : 18}px system-ui, sans-serif`;
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      ctx.fillText(fitText(pname(remaining[i]), 5), R - 14, 0);
+      ctx.fillText(fitText(pname(i), 5), R - 14, 0);
       ctx.restore();
     }
-    ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, TAU);
     ctx.fillStyle = '#14122b'; ctx.fill();
     ctx.strokeStyle = '#f4f1ff'; ctx.lineWidth = 4; ctx.stroke();
     ctx.restore();
   }
 
   btn.addEventListener('click', () => {
-    if (spinning) return;
-    spinning = true;
-    btn.disabled = true;
-    const m = remaining.length;
-    const a = (Math.PI * 2) / m;
-    const w = rand(m);                                   // 멈출 칸
+    btn.remove();
+    msg.textContent = '두구두구…';
+    const who = rand(n);                                 // 멈출 칸 = 당첨자
     const f = (8 + rand(85)) / 100;                      // 칸 안에서의 위치 (경계 바로 위는 피함)
-    const TAU = Math.PI * 2;
-    const mod = (x) => ((x % TAU) + TAU) % TAU;
-    const from = rot;
-    const to = from + TAU * (5 + rand(3)) + mod(-(w + f) * a - mod(from));
+    const to = TAU * (5 + rand(3)) + mod(-(who + f) * a);
     const dur = 10000;                                   // 마지막 3초쯤은 한두 칸을 기어가듯 넘어간다
     const t0 = performance.now();
     let lastTick = -1;
     (function frame(now) {
       if (token !== runToken) return;
       const t = Math.min(1, (now - t0) / dur);
-      rot = from + (to - from) * (1 - Math.pow(1 - t, 3));
+      rot = to * (1 - Math.pow(1 - t, 3));
       const tick = Math.floor(mod(-rot) / a);
       if (tick !== lastTick) {
         lastTick = tick;
@@ -392,29 +365,11 @@ function rouletteGame(token) {
       }
       draw();
       if (t < 1) return requestAnimationFrame(frame);
-      const who = remaining[w];
-      losers.push(who);
       msg.innerHTML = `<b style="color:${color(who)}">${esc(pname(who))}</b> 당첨!`;
-      if (losers.length >= k) {
-        btn.remove();
-        showResult(losers);
-        return;
-      }
-      buzz(120);
-      setTimeout(() => {
-        if (token !== runToken) return;
-        remaining = remaining.filter((p) => p !== who);
-        rot = 0;
-        draw();
-        setMsg();
-        btn.textContent = '한 명 더 돌리기';
-        btn.disabled = false;
-        spinning = false;
-      }, 1400);
+      showResult(who);
     })(t0);
-  });
+  }, { once: true });
 
-  setMsg();
   draw();
 }
 
