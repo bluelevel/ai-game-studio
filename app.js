@@ -205,11 +205,12 @@ function ladderGame(token) {
     const W = stage.clientWidth;
     const H = Math.max(340, Math.min(480, Math.round(window.innerHeight * 0.55)));
     const ctx = setupCanvas($('#ladder'), W, H);
-    const padX = n > 6 ? 22 : 36;
-    const top = 40, bot = H - 40;
+    const padX = n > 6 ? 24 : 40;
+    const top = 48, bot = H - 48;
+    const labelPx = n <= 4 ? 19 : n <= 6 ? 17 : 14;      // 이름·당첨/통과 글씨 — 인원이 적을수록 크게
     const X = (c) => padX + (c * (W - 2 * padX)) / (n - 1);
     const Y = (l) => (l < 0 ? top : l >= LEVELS ? bot : top + ((l + 1) * (bot - top)) / (LEVELS + 1));
-    const nameMax = n > 7 ? 2 : n > 5 ? 3 : 4;
+    const nameMax = n > 8 ? 2 : n > 5 ? 3 : 4;
     const revealed = new Array(n).fill(false);
 
     function pathLen(pts) {
@@ -241,16 +242,16 @@ function ladderGame(token) {
       for (let p = 0; p < done; p++) strokePath(paths[p].pts, Infinity, color(p));
       if (cur >= 0) strokePath(paths[cur].pts, curLen, color(cur));
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = '800 13px system-ui, sans-serif';
+      ctx.font = `900 ${labelPx}px system-ui, sans-serif`;
       for (let c = 0; c < n; c++) {
         ctx.fillStyle = color(taken[c]);
-        ctx.fillText(fitText(pname(taken[c]), nameMax), X(c), 18);
+        ctx.fillText(fitText(pname(taken[c]), nameMax), X(c), 22);
         if (revealed[c]) {
           ctx.fillStyle = outcome[c] ? '#ff5d5d' : '#3fd6a1';
-          ctx.fillText(outcome[c] ? '당첨' : '통과', X(c), H - 18);
+          ctx.fillText(outcome[c] ? '당첨' : '통과', X(c), H - 22);
         } else {
           ctx.fillStyle = '#736ea6';
-          ctx.fillText('?', X(c), H - 18);
+          ctx.fillText('?', X(c), H - 22);
         }
       }
     }
@@ -329,7 +330,7 @@ function rouletteGame(token) {
       ctx.save();
       ctx.rotate((i + 0.5) * a);
       ctx.fillStyle = '#16122e';
-      ctx.font = `900 ${n > 7 ? 14 : 18}px system-ui, sans-serif`;
+      ctx.font = `900 ${n <= 5 ? 24 : n <= 7 ? 20 : 16}px system-ui, sans-serif`;
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       ctx.fillText(fitText(pname(i), 5), R - 14, 0);
       ctx.restore();
