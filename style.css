@@ -170,44 +170,9 @@ canvas { display: block; width: 100%; }
   border-top: 28px solid var(--text);
   filter: drop-shadow(0 3px 0 #00000066);
 }
-
-/* ---------- 카드 ---------- */
-.cards { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 10px; }
-.card { aspect-ratio: 3 / 4; perspective: 700px; background: none; border: 0; padding: 0; }
-.card:disabled { opacity: 1; }
-.card-in { display: block; position: relative; width: 100%; height: 100%; transition: transform .5s; transform-style: preserve-3d; }
-.card.flipped .card-in { transform: rotateY(180deg); }
-.face {
-  position: absolute; inset: 0; border-radius: 14px; backface-visibility: hidden;
-  display: grid; place-items: center; align-content: center; gap: 4px; padding: 6px; text-align: center;
+.pointer.tick { animation: tick .18s ease-out; transform-origin: 50% 0; }
+@keyframes tick {
+  0% { transform: translateX(-50%) rotate(0); }
+  40% { transform: translateX(-50%) rotate(-22deg); }
+  100% { transform: translateX(-50%) rotate(0); }
 }
-.face.front {
-  background: repeating-linear-gradient(45deg, #5fd1ff, #5fd1ff 8px, #49bdf0 8px, #49bdf0 16px);
-  border: 3px solid #fff; color: #0e3550; font-size: 26px; font-weight: 900;
-}
-.face.back { transform: rotateY(180deg); background: var(--panel-2); border: 3px solid var(--ok); }
-.card.bad .face.back { background: #4a1630; border-color: var(--danger); }
-.face.back .mark { font-size: 30px; line-height: 1; }
-.face.back .who { font-size: 13px; font-weight: 800; word-break: break-all; }
-.card.dim { opacity: .45; }
-
-/* ---------- 폭탄 해체 ---------- */
-.bomb-icon { font-size: 76px; line-height: 1; text-align: center; }
-.wires { display: grid; gap: 10px; }
-.wire {
-  display: flex; align-items: center; gap: 12px; width: 100%; height: 54px; padding: 0 14px;
-  border-radius: 14px; border: 2px solid var(--line); background: var(--panel-2);
-  transition: border-color .15s, background .15s;
-}
-.wire:disabled { opacity: 1; }
-.wire:active:not(:disabled) { transform: scale(.98); }
-.wire-tag { flex: none; width: 76px; text-align: left; font-size: 15px; font-weight: 900; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.wire-line { flex: 1; height: 10px; border-radius: 5px; background: var(--w); }
-.wire-end { flex: none; width: 40px; text-align: right; font-size: 13px; font-weight: 800; color: var(--ok); }
-.wire.target { border-color: var(--accent); }
-.wire.cut .wire-line { background: linear-gradient(90deg, var(--w) 0 43%, transparent 43% 57%, var(--w) 57%); }
-.wire.bad { border-color: var(--danger); background: #4a1630; }
-.wire.bad .wire-end { font-size: 22px; }
-.wire.dim { opacity: .45; }
-body.boom { animation: flash .5s; }
-@keyframes flash { 0%, 40% { background: #fff; } }

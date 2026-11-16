@@ -1,7 +1,7 @@
 {
   "name": "복불복",
   "short_name": "복불복",
-  "description": "사다리, 룰렛, 카드 뽑기, 폭탄 해체 — 여럿이 하는 복불복 게임",
+  "description": "사다리 타기와 룰렛 — 여럿이 하는 복불복 게임",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",

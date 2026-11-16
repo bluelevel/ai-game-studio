@@ -93,7 +93,6 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.
 function goHome() {
   runToken++;
   currentGame = null;
-  document.body.classList.remove('boom');
   gameEl.hidden = true;
   homeEl.hidden = false;
   renderPlayers();
@@ -102,7 +101,6 @@ function goHome() {
 function startGame(id) {
   runToken++;
   currentGame = id;
-  document.body.classList.remove('boom');
   homeEl.hidden = true;
   gameEl.hidden = false;
   $('#game-title').textContent = GAMES[id].title;
@@ -327,6 +325,7 @@ function rouletteGame(token) {
   const ctx = setupCanvas($('#wheel'), size, size);
   const msg = $('#r-msg');
   const btn = $('#spin');
+  const pointer = $('.pointer', stage);
 
   function setMsg() {
     msg.textContent = k > 1 ? `${k}명 중 ${losers.length + 1}번째 당첨자를 뽑습니다` : '화살표에 멈춘 사람이 당첨';
@@ -368,20 +367,28 @@ function rouletteGame(token) {
     const m = remaining.length;
     const a = (Math.PI * 2) / m;
     const w = rand(m);                                   // 멈출 칸
-    const f = (12 + rand(77)) / 100;                     // 칸 안에서의 위치 (경계는 피함)
+    const f = (8 + rand(85)) / 100;                      // 칸 안에서의 위치 (경계 바로 위는 피함)
     const TAU = Math.PI * 2;
     const mod = (x) => ((x % TAU) + TAU) % TAU;
     const from = rot;
     const to = from + TAU * (5 + rand(3)) + mod(-(w + f) * a - mod(from));
-    const dur = 4600;
+    const dur = 10000;                                   // 마지막 3초쯤은 한두 칸을 기어가듯 넘어간다
     const t0 = performance.now();
     let lastTick = -1;
     (function frame(now) {
       if (token !== runToken) return;
       const t = Math.min(1, (now - t0) / dur);
-      rot = from + (to - from) * (1 - Math.pow(1 - t, 4));
+      rot = from + (to - from) * (1 - Math.pow(1 - t, 3));
       const tick = Math.floor(mod(-rot) / a);
-      if (tick !== lastTick) { lastTick = tick; if (t > 0.6) buzz(8); }
+      if (tick !== lastTick) {
+        lastTick = tick;
+        if (t > 0.45) {                                    // 느려진 뒤로는 칸이 넘어갈 때마다 바늘이 튕긴다
+          buzz(t > 0.7 ? 25 : 8);
+          pointer.classList.remove('tick');
+          void pointer.offsetWidth;
+          pointer.classList.add('tick');
+        }
+      }
       draw();
       if (t < 1) return requestAnimationFrame(frame);
       const who = remaining[w];
@@ -410,168 +417,9 @@ function rouletteGame(token) {
   draw();
 }
 
-/* ================= 3. 카드 뽑기 ================= */
-function cardGame(token) {
-  const n = state.players.length;
-  const k = loserCount();
-  const deck = shuffle(Array.from({ length: n }, (_, i) => i < k));   // true = 당첨 카드
-  const owner = new Array(n).fill(-1);
-  const losers = [];
-  let turn = 0;
-  let locked = false;
-  const cols = n <= 4 ? 2 : n <= 9 ? 3 : 4;
-
-  stage.innerHTML = `
-    <p class="turn" id="c-msg"></p>
-    <div class="cards" style="--cols:${cols}">${deck.map((_, c) => `
-      <button class="card" data-c="${c}" aria-label="카드 ${c + 1}">
-        <span class="card-in"><span class="face front">?</span><span class="face back"></span></span>
-      </button>`).join('')}</div>
-    <p class="hint">당첨 카드 ${k}장 · 순서대로 한 장씩 고르세요</p>`;
-  const msg = $('#c-msg');
-  const cardEls = [...stage.querySelectorAll('.card')];
-
-  function setMsg() { msg.innerHTML = `<b style="color:${color(turn)}">${esc(pname(turn))}</b> 차례 · 카드를 고르세요`; }
-  function flip(c, who, dim) {
-    owner[c] = who;
-    const el = cardEls[c];
-    el.disabled = true;
-    $('.back', el).innerHTML = `<span class="mark">${deck[c] ? '💥' : '😌'}</span>${who >= 0 ? `<span class="who" style="color:${color(who)}">${esc(pname(who))}</span>` : ''}`;
-    el.classList.add('flipped', deck[c] ? 'bad' : 'ok');
-    if (dim) el.classList.add('dim');
-  }
-  function finish() {
-    locked = true;
-    msg.textContent = '결과가 나왔습니다';
-    setTimeout(() => { if (token === runToken) showResult(losers); }, 700);
-  }
-
-  $('.cards', stage).addEventListener('click', (e) => {
-    const el = e.target.closest('.card');
-    if (!el || locked || owner[+el.dataset.c] >= 0) return;
-    const c = +el.dataset.c;
-    flip(c, turn, false);
-    if (deck[c]) { losers.push(turn); buzz(100); } else buzz(15);
-    turn++;
-    const cardsLeft = n - turn;
-    const badLeft = k - losers.length;
-    if (badLeft === 0) {
-      // 당첨 카드가 다 나왔으면 나머지는 안전 — 뒤집어서 보여 주고 끝
-      owner.forEach((o, i) => { if (o < 0) flip(i, -1, true); });
-      finish();
-    } else if (cardsLeft === badLeft) {
-      // 남은 카드가 전부 당첨이면 남은 사람 모두 당첨
-      owner.forEach((o, i) => { if (o < 0) { flip(i, turn, false); losers.push(turn); turn++; } });
-      finish();
-    } else {
-      setMsg();
-    }
-  });
-
-  setMsg();
-}
-
-/* ================= 4. 폭탄 해체 ================= */
-// 순서가 없는 게임: 각자 전선을 하나씩 맡은 "뒤에" 폭탄 전선을 균등하게 정하고,
-// 버튼 한 번으로 한꺼번에 공개한다. 먼저 고르든 나중에 고르든 걸릴 확률은 같고,
-// 누구도 "먼저 눌러 보는" 부담을 지지 않는다.
-function bombGame(token) {
-  const n = state.players.length;
-  const k = loserCount();
-  const owner = new Array(n).fill(-1);    // 전선 -> 참가자
-  const wcolor = (w) => PALETTE[(w * 3 + 5) % PALETTE.length];
-  let turn = 0;
-
-  const wiresHtml = () => `<div class="wires">${owner.map((p, w) => `
-    <button class="wire" data-w="${w}" style="--w:${wcolor(w)}" ${p >= 0 ? 'disabled' : ''} aria-label="전선 ${w + 1}">
-      <span class="wire-tag" ${p >= 0 ? `style="color:${color(p)}"` : ''}>${p >= 0 ? esc(pname(p)) : w + 1}</span>
-      <span class="wire-line"></span>
-      <span class="wire-end"></span>
-    </button>`).join('')}</div>`;
-
-  function renderPick() {
-    stage.innerHTML = `
-      <p class="turn"><b style="color:${color(turn)}">${esc(pname(turn))}</b> 차례 · 전선을 하나 고르세요</p>
-      <div class="bomb-icon">💣</div>
-      ${wiresHtml()}
-      <p class="hint">폭탄 전선 ${k}개는 모두 고른 뒤에 정해집니다 · 고르는 순서는 결과와 무관</p>`;
-    $('.wires', stage).addEventListener('click', (e) => {
-      const b = e.target.closest('[data-w]');
-      if (!b || owner[+b.dataset.w] >= 0) return;
-      owner[+b.dataset.w] = turn++;
-      buzz(15);
-      if (turn === n - 1) { owner[owner.indexOf(-1)] = turn++; }   // 마지막 사람은 남은 전선
-      if (turn >= n) renderReady(); else renderPick();
-    });
-  }
-
-  function renderReady() {
-    stage.innerHTML = `
-      <p class="turn" id="w-msg">모두 골랐습니다 · 한꺼번에 자릅니다</p>
-      <div class="bomb-icon" id="bomb">💣</div>
-      ${wiresHtml()}
-      <button class="btn primary big" id="w-go">전선 자르기</button>`;
-    $('#w-go').addEventListener('click', reveal, { once: true });
-  }
-
-  async function reveal() {
-    const bad = shuffle(Array.from({ length: n }, (_, i) => i < k));   // 전선별 폭탄 여부 — 지금 정한다
-    const order = shuffle(Array.from({ length: n }, (_, i) => i));     // 공개 순서 (연출용, 결과와 무관)
-    const msg = $('#w-msg');
-    const bomb = $('#bomb');
-    const wires = [...stage.querySelectorAll('.wire')];
-    const go = $('#w-go');
-    const losers = [];
-    let skip = false;
-    go.textContent = '결과 바로 보기';
-    go.classList.remove('primary');
-    go.addEventListener('click', () => { skip = true; }, { once: true });
-
-    for (const w of order) {
-      if (losers.length >= k) break;
-      const p = owner[w];
-      wires[w].classList.add('target');
-      msg.innerHTML = `<b style="color:${color(p)}">${esc(pname(p))}</b>의 전선을 자릅니다…`;
-      if (!skip) await sleep(900);
-      if (token !== runToken) return;
-      wires[w].classList.remove('target');
-      wires[w].classList.add('cut', bad[w] ? 'bad' : 'ok');
-      $('.wire-end', wires[w]).textContent = bad[w] ? '💥' : '통과';
-      if (bad[w]) {
-        losers.push(p);
-        buzz(150);
-        bomb.textContent = '💥';
-        document.body.classList.remove('boom');
-        void document.body.offsetWidth;
-        document.body.classList.add('boom');
-        msg.innerHTML = `<b style="color:${color(p)}">${esc(pname(p))}</b> 폭탄 전선!`;
-      } else {
-        buzz(15);
-        msg.innerHTML = `<b style="color:${color(p)}">${esc(pname(p))}</b> 통과`;
-      }
-      if (!skip) await sleep(650);
-      if (token !== runToken) return;
-      if (bad[w] && losers.length < k) bomb.textContent = '💣';
-    }
-    // 폭탄이 다 나왔으면 남은 전선은 안전
-    wires.forEach((el, w) => {
-      if (el.classList.contains('cut')) return;
-      el.classList.add('dim');
-      $('.wire-end', el).textContent = '통과';
-    });
-    go.remove();
-    msg.textContent = '결과가 나왔습니다';
-    showResult(losers.sort((x, y) => x - y));
-  }
-
-  renderPick();
-}
-
 const GAMES = {
   ladder: { title: '사다리 타기', start: ladderGame },
   roulette: { title: '룰렛', start: rouletteGame },
-  cards: { title: '카드 뽑기', start: cardGame },
-  bomb: { title: '폭탄 해체', start: bombGame },
 };
 
 renderPlayers();
