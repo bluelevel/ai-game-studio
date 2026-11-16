@@ -2,7 +2,8 @@
 
 /* ================= 공통 ================= */
 const $ = (sel, el = document) => el.querySelector(sel);
-const PALETTE = ['#ff5d5d', '#ffb84d', '#ffe14d', '#7ddc5a', '#3fd6c1', '#4da6ff', '#8f7bff', '#e06bff', '#ff7ab8', '#c3cad9'];
+// 앞 순서일수록 서로 확 다른 색이 오도록 배치 (2명: 빨강·파랑, 3명: +노랑, 4명: +초록 …)
+const PALETTE = ['#ff4d4d', '#3d9bff', '#ffe14d', '#4fd65a', '#c06bff', '#ff9a3d', '#2fd6c8', '#ff7ab8', '#e8ecf5', '#b08968'];
 const MIN_P = 2;
 const MAX_P = 10;
 const STORE_KEY = 'bokbulbok-v1';
