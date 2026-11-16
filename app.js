@@ -10,8 +10,8 @@ const MIN_P = 2;
 const MAX_P = 10;
 const STORE_KEY = 'bokbulbok-v1';
 const TAU = Math.PI * 2;
-// 깜짝 이벤트가 나올 확률(%). 지금은 직접 확인해 보려고 전부 100 — 평소 값은 사다리 20, 룰렛 25, 달리기 20.
-const SURPRISE = { ladder: 100, roulette: 100, race: 100 };
+// 깜짝 이벤트가 나올 확률(%) — 사다리 연장, 룰렛 한 바퀴 더, 달리기 부스터
+const SURPRISE = { ladder: 25, roulette: 25, race: 25 };
 
 function today() {
   const d = new Date();
