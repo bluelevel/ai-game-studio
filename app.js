@@ -10,6 +10,8 @@ const MIN_P = 2;
 const MAX_P = 10;
 const STORE_KEY = 'bokbulbok-v1';
 const TAU = Math.PI * 2;
+// 깜짝 이벤트가 나올 확률(%). 지금은 직접 확인해 보려고 전부 100 — 평소 값은 사다리 20, 룰렛 25, 달리기 20.
+const SURPRISE = { ladder: 100, roulette: 100, race: 100 };
 
 function today() {
   const d = new Date();
@@ -101,6 +103,7 @@ const sfx = (() => {
     hoof() { tone(150, 0.06, 'triangle', 0.1, 0, 70); },                     // 달리는 발소리
     pass() { tone(660, 0.09, 'sine', 0.11); tone(990, 0.16, 'sine', 0.11, 0.08); },
     go() { tone(440, 0.1, 'square', 0.07); tone(880, 0.22, 'square', 0.07, 0.11); },
+    twist() { tone(260, 0.55, 'sawtooth', 0.1, 0, 1500); },                  // 깜짝 이벤트 (부스터·한 바퀴 더·사다리 연장)
     reveal() {
       tone(120, 0.5, 'sawtooth', 0.16, 0, 50);
       [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.4, 'triangle', 0.12, 0.12 + i * 0.09));
@@ -286,6 +289,21 @@ function buildLadder(n, levels) {
   }
   return rungs;
 }
+// 깜짝 연장 구간 — 뭔가 일어나도록 가로줄이 너무 적으면 다시 뽑는다
+function extraRungs(n, levels) {
+  for (;;) {
+    const rows = [];
+    let count = 0;
+    for (let l = 0; l < levels; l++) {
+      const row = new Array(n - 1).fill(false);
+      for (let c = 0; c < n - 1; c++) {
+        if (!(c > 0 && row[c - 1]) && rand(100) < 50) { row[c] = true; count++; }
+      }
+      rows.push(row);
+    }
+    if (count >= Math.min(2, n - 1)) return rows;
+  }
+}
 function traceLadder(rungs, start) {
   let c = start;
   const pts = [[c, -1]];
@@ -321,19 +339,29 @@ function ladderGame(token) {
   }
 
   async function run() {
-    const LEVELS = 10;
-    const rungs = buildLadder(n, LEVELS);
+    const BASE = 10, EXTRA = 3;
+    // 어쩌다 한 번: 첫 사람이 바닥에 닿는 순간 사다리가 더 길어진다. 늘어난 사다리 전체로
+    // 결과가 정해지고 당첨 자리는 따로 고르게 섞으므로, 길어지든 아니든 확률은 모두 같다.
+    const hasExt = rand(100) < SURPRISE.ladder;
+    const rungs = buildLadder(n, BASE);
+    if (hasExt) rungs.push(...extraRungs(n, EXTRA));
     const outcome = shuffle(Array.from({ length: n }, (_, i) => i === 0));   // 도착 자리별 당첨 여부 (당첨은 한 자리)
-    const paths = [];                                                        // 참가자 순서대로
     const slotOf = new Array(n);
     taken.forEach((p, c) => { slotOf[p] = c; });
-    for (let p = 0; p < n; p++) paths.push(traceLadder(rungs, slotOf[p]));
+    const paths = [];                                                        // 참가자 순서대로, 사다리 끝까지
+    const firstLeg = [];                                                     // 늘어나기 전 길이까지만
+    for (let p = 0; p < n; p++) {
+      paths.push(traceLadder(rungs, slotOf[p]));
+      firstLeg.push(traceLadder(rungs.slice(0, BASE), slotOf[p]).pts);
+    }
     const loser = paths.findIndex((path) => outcome[path.end]);
+    let ext = 0;                                                             // 0: 원래 길이 → 1: 늘어난 길이
 
     stage.innerHTML = `
       <p class="turn" id="l-msg">사다리가 만들어졌습니다</p>
       <div class="board"><canvas id="ladder"></canvas></div>
       <button class="btn primary big" id="l-go">출발!</button>`;
+    const msg = $('#l-msg');
     const W = stage.clientWidth;
     const H = Math.max(400, Math.min(540, Math.round(window.innerHeight * 0.58)));
     const ctx = setupCanvas($('#ladder'), W, H);
@@ -342,7 +370,8 @@ function ladderGame(token) {
     const top = ar * 2 + 22, bot = H - (ar * 2 + 26);
     const labelPx = n <= 5 ? 16 : n <= 7 ? 14 : 12;
     const X = (c) => padX + (c * (W - 2 * padX)) / (n - 1);
-    const Y = (l) => (l < 0 ? top : l >= LEVELS ? bot : top + ((l + 1) * (bot - top)) / (LEVELS + 1));
+    // 늘어날 때는 위쪽 사다리가 줄어들며 아래에 새 칸이 생긴다
+    const Y = (l) => (l < 0 ? top : Math.min(bot, top + ((l + 1) * (bot - top)) / (BASE + EXTRA * ext + 1)));
     const revealed = new Array(n).fill(false);
 
     function pathLen(pts) {
@@ -384,19 +413,31 @@ function ladderGame(token) {
       ctx.font = `900 ${labelPx}px system-ui, sans-serif`;
       ctx.fillText(text, x, y + 1);
     }
-    function draw(done, cur, curLen) {
+    function strokeRungs(from, to) {
+      ctx.beginPath();
+      for (let l = from; l < to; l++) rungs[l].forEach((on, c) => { if (on) { ctx.moveTo(X(c), Y(l)); ctx.lineTo(X(c + 1), Y(l)); } });
+      ctx.stroke();
+    }
+    // done: 도착한 사람 수, cur: 지금 내려가는 사람(-1 이면 없음), pts/len: 그 사람의 길과 내려간 거리
+    function draw(done, cur, pts, len) {
       ctx.clearRect(0, 0, W, H);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = '#5a5596'; ctx.lineWidth = 5;
       ctx.beginPath();
       for (let c = 0; c < n; c++) { ctx.moveTo(X(c), top); ctx.lineTo(X(c), bot); }
-      rungs.forEach((row, l) => row.forEach((on, c) => { if (on) { ctx.moveTo(X(c), Y(l)); ctx.lineTo(X(c + 1), Y(l)); } }));
       ctx.stroke();
+      strokeRungs(0, BASE);
+      if (ext > 0) {                                                       // 새로 생긴 칸은 노랗게 나타난다
+        ctx.save();
+        ctx.globalAlpha = ext; ctx.strokeStyle = '#ffd23f';
+        strokeRungs(BASE, rungs.length);
+        ctx.restore();
+      }
       for (let p = 0; p < done; p++) strokePath(paths[p].pts, Infinity, color(p), 5, 0.85);
       let head = null;
       if (cur >= 0) {
-        strokePath(paths[cur].pts, curLen, color(cur), 16, 0.25);          // 빛나는 자국
-        head = strokePath(paths[cur].pts, curLen, color(cur), 7, 1);
+        strokePath(pts, len, color(cur), 16, 0.25);                        // 빛나는 자국
+        head = strokePath(pts, len, color(cur), 7, 1);
       }
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (let c = 0; c < n; c++) {
@@ -417,7 +458,7 @@ function ladderGame(token) {
       for (let p = 0; p < done; p++) drawAvatar(ctx, X(paths[p].end), bot - ar * 0.4, ar * 0.8, p);   // 도착한 캐릭터
       return head;
     }
-    draw(0, -1, 0);
+    draw(0, -1);
 
     await new Promise((res) => $('#l-go').addEventListener('click', res, { once: true }));
     if (token !== runToken) return;
@@ -427,38 +468,64 @@ function ladderGame(token) {
     go.textContent = '결과 바로 보기';
     go.classList.remove('primary');
     go.addEventListener('click', () => { skip = true; }, { once: true });
+    const stopped = () => skip || token !== runToken;
+
+    // dur 동안 매 프레임 step(0..1)을 부른다. 건너뛰거나 화면을 떠나면 바로 끝난다
+    const tween = (dur, step) => new Promise((res) => {
+      const t0 = performance.now();
+      (function frame(now) {
+        if (stopped()) return res();
+        const t = Math.min(1, (now - t0) / dur);
+        step(t);
+        if (t < 1) requestAnimationFrame(frame); else res();
+      })(t0);
+    });
+    // p 가 pts 를 따라 from → to 거리만큼 내려간다. 꺾일 때마다 소리
+    function descend(p, pts, from, to, dur) {
+      let lastSeg = -1;
+      return tween(dur, (t) => {
+        const head = draw(p, p, pts, from + (to - from) * t);
+        if (lastSeg >= 0 && head.seg !== lastSeg) sfx.step();
+        lastSeg = head.seg;
+      });
+    }
 
     let done = 0;
-    for (let p = 0; p < n && !skip; p++) {
-      $('#l-msg').innerHTML = `${named(p)} 내려가는 중…`;
-      const total = pathLen(paths[p].pts);
-      const dur = 2400;
-      const t0 = performance.now();
-      let lastSeg = 0;
-      await new Promise((res) => {
-        (function frame(now) {
-          if (token !== runToken) return res();
-          const t = Math.min(1, (now - t0) / dur);
-          const head = draw(p, p, total * t);
-          if (head.seg !== lastSeg) { lastSeg = head.seg; sfx.step(); }   // 꺾일 때마다 소리
-          if (t < 1 && !skip) requestAnimationFrame(frame); else res();
-        })(t0);
-      });
-      if (token !== runToken) return;
-      if (skip) break;
+    for (let p = 0; p < n && !stopped(); p++) {
+      msg.innerHTML = `${named(p)} 내려가는 중…`;
+      const full = paths[p].pts;
+      if (hasExt && ext === 0) {                                           // 첫 사람: 바닥에 닿는 순간 사다리가 늘어난다
+        const leg = firstLeg[p];
+        await descend(p, leg, 0, pathLen(leg), 2400);
+        if (stopped()) break;
+        msg.innerHTML = '앗! 사다리가 <b style="color:#ffd23f">더 길어집니다</b>';
+        sfx.twist();
+        buzz([60, 40, 60]);
+        await tween(900, (t) => { ext = t * t * (3 - 2 * t); draw(p, p, leg, Infinity); });
+        if (stopped()) break;
+        ext = 1;
+        await sleep(350);
+        if (stopped()) break;
+        msg.innerHTML = `${named(p)} 더 내려가는 중…`;
+        await descend(p, full, pathLen(leg), pathLen(full), 1100);
+      } else {
+        await descend(p, full, 0, pathLen(full), hasExt ? 3000 : 2400);
+      }
+      if (stopped()) break;
       revealed[paths[p].end] = true;
       done = p + 1;
-      draw(done, -1, 0);
+      draw(done, -1);
       if (p === loser) break;                                             // 당첨 상자가 열리면 더 볼 것이 없다
       sfx.pass();
       buzz(15);
       await sleep(550);
     }
     if (token !== runToken) return;
+    if (hasExt) ext = 1;
     revealed.fill(true);
-    draw(done > loser ? done : n, -1, 0);
+    draw(done > loser ? done : n, -1);
     go.remove();
-    $('#l-msg').innerHTML = `${named(loser)} 상자에서 당첨!`;
+    msg.innerHTML = `${named(loser)} 상자에서 당첨!`;
     showResult(loser);
   }
 
@@ -532,13 +599,34 @@ function rouletteGame(token) {
     const f = (8 + rand(85)) / 100;                      // 칸 안에서의 위치 (경계 바로 위는 피함)
     const to = TAU * (5 + rand(3)) + mod(-(who + f) * a);
     const dur = 10000;                                   // 마지막 3초쯤은 한두 칸을 기어가듯 넘어간다
+    // 가끔: 거의 멈출 때쯤 한 바퀴 넘게 더 돈다. 멈출 칸(who)은 이미 정해져 있어 결과는 그대로다.
+    const encore = rand(100) < SURPRISE.roulette;
+    const to1 = encore ? to - TAU * (1 + rand(100) / 100) : to;    // 처음에 멈추는 척하는 자리
+    const CUT = 0.86, MORE = 4400;
+    const rot1 = to1 * (1 - Math.pow(1 - CUT, 3));
+    let again = false;
     const t0 = performance.now();
     let lastTick = -1;
     let lastSound = 0;
     (function frame(now) {
       if (token !== runToken) return;
-      const t = Math.min(1, (now - t0) / dur);
-      rot = to * (1 - Math.pow(1 - t, 3));
+      let t = Math.min(1, (now - t0) / dur);
+      let end = t >= 1;
+      if (encore && t >= CUT) {
+        if (!again) {
+          again = true;
+          msg.innerHTML = '<b style="color:#ffd23f">한 바퀴 더!</b>';
+          sfx.twist();
+          buzz([60, 40, 60]);
+        }
+        const u = Math.min(1, (now - t0 - dur * CUT) / MORE);
+        rot = rot1 + (to - rot1) * (1 - Math.pow(1 - Math.pow(u, 1.6), 3));
+        end = u >= 1;
+        t = u < 0.5 ? 0 : u;                             // 다시 빨라진 동안은 바늘을 튕기지 않는다
+      } else {
+        rot = to1 * (1 - Math.pow(1 - t, 3));
+        end = !encore && t >= 1;
+      }
       lit = Math.floor((now - t0) / 170);
       const tick = Math.floor(mod(-rot) / a);
       if (tick !== lastTick) {
@@ -552,7 +640,7 @@ function rouletteGame(token) {
         }
       }
       draw();
-      if (t < 1) return requestAnimationFrame(frame);
+      if (!end) return requestAnimationFrame(frame);
       msg.innerHTML = `${named(who)} 당첨!`;
       showResult(who);
     })(t0);
@@ -584,7 +672,24 @@ function buildRace(n) {
     pts.push([finish[p], 1]);
     runners.push(pts);
   }
-  return { order, finish, runners };
+  // 가끔: 앞 순위로 들어올 사람 하나가 뒤처져 있다가 부스터로 치고 나온다.
+  // 순위(order)는 위에서 이미 정해졌고 여기서는 그 사람이 달리는 모양만 바꾼다.
+  let boost = null;
+  if (rand(100) < SURPRISE.race) {
+    const p = order[rand(Math.max(1, Math.min(n - 1, Math.ceil(n / 2))))];
+    const from = 4700 + rand(601);
+    const to = from + 850;
+    const w = Array.from({ length: SEG }, () => 60 + rand(81));
+    const sum = w.reduce((x, y) => x + y, 0);
+    const pts = [[0, 0]];
+    let d = 0;
+    for (let j = 0; j < SEG; j++) { d += (w[j] / sum) * 0.5; pts.push([(from * (j + 1)) / SEG, d]); }
+    pts.push([to, 0.88]);
+    pts.push([finish[p], 1]);
+    runners[p] = pts;
+    boost = { p, from, to };
+  }
+  return { order, finish, runners, boost };
 }
 function raceProgress(pts, t) {
   for (let i = 1; i < pts.length; i++) {
@@ -636,6 +741,8 @@ function raceGame(token) {
     e.currentTarget.remove();
     sfx.go();
     const plan = buildRace(n);
+    const boost = plan.boost;
+    let boosting = false;
     stadium.classList.add('running');
     const t0 = performance.now();
     let arrived = 0;
@@ -647,6 +754,11 @@ function raceGame(token) {
       const pos = plan.runners.map((pts) => raceProgress(pts, t));
       for (let p = 0; p < n; p++) place(p, pos[p]);
       if (t - lastHoof > 130) { lastHoof = t; sfx.hoof(); }
+      if (boost) {
+        const on = t >= boost.from && t < boost.to;
+        if (on && !boosting) { sfx.twist(); buzz([60, 40, 60]); }
+        if (on !== boosting) { boosting = on; runnerEls[boost.p].classList.toggle('boost', on); lastTalk = -1000; }
+      }
       while (arrived < n - 1 && t >= plan.finish[plan.order[arrived]]) {
         const p = plan.order[arrived++];
         ranks[p].textContent = `${arrived}등`;
@@ -669,7 +781,8 @@ function raceGame(token) {
       if (t - lastTalk > 350) {
         lastTalk = t;
         showRanks([...plan.order.slice(0, arrived), ...running]);
-        if (arrived === 0) msg.innerHTML = `${named(running[0])} 선두 · ${named(running[n - 1])} 위험`;
+        if (boosting) msg.innerHTML = `🔥 ${named(boost.p)} 부스터!`;
+        else if (arrived === 0) msg.innerHTML = `${named(running[0])} 선두 · ${named(running[n - 1])} 위험`;
         else msg.textContent = `${arrived}명 도착 · 남은 ${n - arrived}명 중 꼴찌는?`;
       }
       requestAnimationFrame(frame);
