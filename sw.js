@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 캐시해 두고, 온라인이면 뒤에서 최신 파일로 갱신한다.
-const CACHE = 'bokbulbok-v3';
+const CACHE = 'bokbulbok-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

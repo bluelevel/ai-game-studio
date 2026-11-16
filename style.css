@@ -6,8 +6,6 @@
   --text: #f4f1ff;
   --muted: #9d98c9;
   --accent: #ffd23f;
-  --danger: #ff5d5d;
-  --ok: #3fd6a1;
   --radius: 18px;
 }
 
@@ -123,8 +121,6 @@ input::placeholder { color: #736ea6; font-weight: 500; }
 .game-card small { font-size: 12px; opacity: .72; font-weight: 600; }
 .game-card:nth-child(1) { background: #ffd23f; }
 .game-card:nth-child(2) { background: #ff7ab8; }
-.game-card:nth-child(3) { background: #5fd1ff; }
-.game-card:nth-child(4) { background: #ff8a4d; }
 
 /* ---------- 게임 공통 ---------- */
 .game-head { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
