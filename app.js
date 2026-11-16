@@ -374,9 +374,120 @@ function rouletteGame(token) {
   draw();
 }
 
+/* ================= 3. 달리기 경주 ================= */
+// 경주 계획 — 순위는 여기서 균등하게 정해지고(모든 순서가 같은 확률), 화면의 달리기는
+// 그 결과를 향해 가는 연출이다. 앞 75% 구간의 빠르기는 순위와 무관하게 뽑으므로
+// 중간에 앞서 있다고 유리한 것이 아니고, 순위는 마지막 구간에서 갈린다.
+function buildRace(n) {
+  const order = shuffle(Array.from({ length: n }, (_, i) => i));   // order[r] = r+1등으로 들어올 참가자
+  const finish = new Array(n);
+  let t = 7200;
+  order.forEach((p, r) => { if (r > 0) t += 250 + rand(201); finish[p] = t; });
+  const SEG = 6;
+  const runners = [];
+  for (let p = 0; p < n; p++) {
+    const t75 = 4600 + rand(901);                     // 75% 지점 통과 시각 (ms)
+    const w = Array.from({ length: SEG }, () => 60 + rand(81));
+    const sum = w.reduce((x, y) => x + y, 0);
+    const pts = [[0, 0]];
+    let d = 0;
+    for (let j = 0; j < SEG; j++) { d += (w[j] / sum) * 0.75; pts.push([(t75 * (j + 1)) / SEG, d]); }
+    const k = (35 + rand(31)) / 100;
+    pts.push([t75 + (finish[p] - t75) * k, 0.75 + 0.25 * ((35 + rand(31)) / 100)]);
+    pts.push([finish[p], 1]);
+    runners.push(pts);
+  }
+  return { order, finish, runners };
+}
+function raceProgress(pts, t) {
+  for (let i = 1; i < pts.length; i++) {
+    if (t <= pts[i][0]) {
+      const [t0, d0] = pts[i - 1];
+      const [t1, d1] = pts[i];
+      return d0 + ((d1 - d0) * (t - t0)) / (t1 - t0);
+    }
+  }
+  return 1;
+}
+
+function raceGame(token) {
+  const n = state.players.length;
+  const laneH = n <= 5 ? 62 : n <= 7 ? 52 : 42;
+  stage.innerHTML = `
+    <p class="turn" id="g-msg">다 같이 출발 · 꼴찌가 당첨</p>
+    <div class="race" style="--lane-h:${laneH}px">${state.players.map((_, p) => `
+      <div class="lane">
+        <span class="lane-name" style="color:${color(p)}">${esc(fitText(pname(p), 3))}</span>
+        <div class="track">
+          <div class="trail" style="background:${color(p)}"></div>
+          <span class="runner" style="background:${color(p)}"><span>🐎</span></span>
+          <i class="finish"></i>
+        </div>
+        <span class="rank"></span>
+      </div>`).join('')}</div>
+    <button class="btn primary big" id="g-go">출발!</button>`;
+  const msg = $('#g-msg');
+  const lanes = [...stage.querySelectorAll('.lane')];
+  const tracks = lanes.map((l) => $('.track', l));
+  const runnerEls = lanes.map((l) => $('.runner', l));
+  const trails = lanes.map((l) => $('.trail', l));
+  const ranks = lanes.map((l) => $('.rank', l));
+
+  function place(p, pos) {
+    const W = tracks[p].clientWidth;
+    const rw = runnerEls[p].offsetWidth;
+    const front = rw + 4 + pos * (W - 20 - rw - 4);     // 달리는 말의 앞쪽 끝 — pos 1 이면 결승선
+    runnerEls[p].style.transform = `translate(${front - rw}px, -50%)`;
+    trails[p].style.width = `${Math.max(0, front - rw / 2)}px`;
+  }
+  for (let p = 0; p < n; p++) place(p, 0);
+
+  $('#g-go').addEventListener('click', (e) => {
+    e.currentTarget.remove();
+    const plan = buildRace(n);
+    const raceEl = $('.race', stage);
+    raceEl.classList.add('running');
+    const t0 = performance.now();
+    let arrived = 0;
+    let lastTalk = -1000;
+    (function frame(now) {
+      if (token !== runToken) return;
+      const t = now - t0;
+      const pos = plan.runners.map((pts) => raceProgress(pts, t));
+      for (let p = 0; p < n; p++) place(p, pos[p]);
+      while (arrived < n - 1 && t >= plan.finish[plan.order[arrived]]) {
+        const p = plan.order[arrived++];
+        ranks[p].textContent = `${arrived}등`;
+        runnerEls[p].classList.add('done');
+        buzz(12);
+      }
+      if (arrived >= n - 1) {                           // 한 명만 남으면 그 사람이 꼴찌
+        const loser = plan.order[n - 1];
+        raceEl.classList.remove('running');
+        lanes[loser].classList.add('lose');
+        ranks[loser].textContent = '꼴찌';
+        msg.innerHTML = `<b style="color:${color(loser)}">${esc(pname(loser))}</b> 꼴찌!`;
+        showResult(loser);
+        return;
+      }
+      if (t - lastTalk > 450) {
+        lastTalk = t;
+        if (arrived === 0) {
+          const lead = pos.indexOf(Math.max(...pos));
+          msg.innerHTML = `<b style="color:${color(lead)}">${esc(pname(lead))}</b> 선두`;
+        } else {
+          msg.textContent = `${arrived}명 도착 · 남은 ${n - arrived}명 중 꼴찌는?`;
+        }
+      }
+      requestAnimationFrame(frame);
+    })(t0);
+  }, { once: true });
+}
+
 const GAMES = {
   ladder: { title: '사다리 타기', start: ladderGame },
   roulette: { title: '룰렛', start: rouletteGame },
+  race: { title: '달리기 경주', start: raceGame },
 };
 
 renderPlayers();

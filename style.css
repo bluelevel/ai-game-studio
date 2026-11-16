@@ -112,6 +112,8 @@ input::placeholder { color: #736ea6; font-weight: 500; }
 .game-card small { font-size: 14px; opacity: .75; font-weight: 700; }
 .game-card:nth-child(1) { background: #ffd23f; }
 .game-card:nth-child(2) { background: #ff7ab8; }
+.game-card:nth-child(3) { background: #5fd1ff; grid-column: span 2; min-height: 0; grid-template-columns: auto 1fr; column-gap: 14px; align-items: center; }
+.game-card:nth-child(3) .emoji { grid-row: span 2; }
 
 /* ---------- 게임 공통 ---------- */
 .game-head { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
@@ -162,3 +164,32 @@ canvas { display: block; width: 100%; }
   40% { transform: translateX(-50%) rotate(-22deg); }
   100% { transform: translateX(-50%) rotate(0); }
 }
+
+/* ---------- 달리기 경주 ---------- */
+.race {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 10px; display: grid; gap: 8px;
+}
+.lane { display: flex; align-items: center; gap: 8px; height: var(--lane-h); }
+.lane-name { flex: none; width: 54px; font-size: 17px; font-weight: 900; overflow: hidden; white-space: nowrap; }
+.track {
+  position: relative; flex: 1; min-width: 0; height: 100%;
+  border-radius: 12px; background: var(--panel-2); border: 2px solid transparent; overflow: hidden;
+}
+.trail { position: absolute; left: 0; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; opacity: .5; }
+.runner {
+  position: absolute; left: 0; top: 50%;
+  width: calc(var(--lane-h) * .74); height: calc(var(--lane-h) * .74); border-radius: 50%;
+  display: grid; place-items: center; font-size: calc(var(--lane-h) * .46); line-height: 1;
+  box-shadow: 0 2px 0 #00000055;
+}
+.runner span { transform: scaleX(-1); }
+.race.running .runner:not(.done) span { animation: gallop .32s ease-in-out infinite alternate; }
+@keyframes gallop { from { transform: scaleX(-1) translateY(2px) rotate(4deg); } to { transform: scaleX(-1) translateY(-3px) rotate(-6deg); } }
+.finish {
+  position: absolute; right: 10px; top: 0; bottom: 0; width: 8px;
+  background: repeating-linear-gradient(0deg, #fff 0 7px, #14122b 7px 14px);
+}
+.rank { flex: none; width: 46px; text-align: center; font-size: 15px; font-weight: 900; color: var(--muted); }
+.lane.lose .track { background: #4a1630; border-color: #ff4d4d; }
+.lane.lose .rank { color: #fff; background: #ff4d4d; border-radius: 10px; padding: 6px 0; }
