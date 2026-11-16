@@ -280,7 +280,7 @@ function ladderGame(token) {
     for (let p = 0; p < n && !skip; p++) {
       $('#l-msg').innerHTML = `<b style="color:${color(p)}">${esc(pname(p))}</b> 내려가는 중…`;
       const total = pathLen(paths[p].pts);
-      const dur = 1500;
+      const dur = 2400;
       const t0 = performance.now();
       await new Promise((res) => {
         (function frame(now) {
@@ -294,7 +294,7 @@ function ladderGame(token) {
       revealed[paths[p].end] = true;
       draw(p + 1, -1, 0);
       if (outcome[paths[p].end]) buzz(80);
-      if (!skip) await sleep(350);
+      if (!skip) await sleep(550);
     }
     if (token !== runToken) return;
     revealed.fill(true);
