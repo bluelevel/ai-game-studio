@@ -16,8 +16,11 @@
   <!-- 홈: 참가자와 게임 고르기 -->
   <section id="home" class="screen">
     <header class="hero">
-      <h1>복불복</h1>
-      <p>오늘은 누가 걸릴까</p>
+      <div>
+        <h1>복불복</h1>
+        <p>오늘은 누가 걸릴까</p>
+      </div>
+      <button id="sound" class="icon-btn" aria-label="소리 켜기/끄기">🔊</button>
     </header>
 
     <section class="panel">
@@ -26,16 +29,20 @@
         <span id="player-count" class="muted"></span>
       </div>
       <ul id="players"></ul>
-      <button id="add-player" class="btn ghost">+ 참가자 추가</button>
+      <p class="hint">얼굴을 누르면 캐릭터가 바뀝니다</p>
     </section>
 
-
-    <h2 class="section-title">게임 고르기</h2>
     <div class="games">
-      <button class="game-card" data-game="ladder"><span class="emoji">🪜</span><b>사다리 타기</b><small>자리를 고르고 내려가기</small></button>
-      <button class="game-card" data-game="roulette"><span class="emoji">🎡</span><b>룰렛</b><small>돌려서 멈춘 사람</small></button>
-      <button class="game-card" data-game="race"><span class="emoji">🏁</span><b>달리기 경주</b><small>다 같이 출발, 꼴찌가 당첨</small></button>
+      <button class="game-card" data-game="ladder"><span class="emoji">🪜</span><span><b>사다리 타기</b><small>자리를 고르고 내려가기</small></span></button>
+      <button class="game-card" data-game="roulette"><span class="emoji">🎡</span><span><b>룰렛</b><small>돌려서 멈춘 사람</small></span></button>
+      <button class="game-card" data-game="race"><span class="emoji">🏁</span><span><b>달리기 경주</b><small>다 같이 출발, 꼴찌가 당첨</small></span></button>
     </div>
+
+    <section id="tally" hidden>
+      <b>오늘의 전적</b>
+      <div id="tally-list"></div>
+      <button id="tally-reset">지우기</button>
+    </section>
   </section>
 
   <!-- 게임 화면 -->

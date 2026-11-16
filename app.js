@@ -4,18 +4,35 @@
 const $ = (sel, el = document) => el.querySelector(sel);
 // 앞 순서일수록 서로 확 다른 색이 오도록 배치 (2명: 빨강·파랑, 3명: +노랑, 4명: +초록 …)
 const PALETTE = ['#ff4d4d', '#3d9bff', '#ffe14d', '#4fd65a', '#c06bff', '#ff9a3d', '#2fd6c8', '#ff7ab8', '#e8ecf5', '#b08968'];
+// 캐릭터 얼굴 — 빠르거나 느린 인상이 없는 것만 (달리기에서 불리해 보이지 않게)
+const FACES = ['🦊', '🐼', '🐸', '🐯', '🐵', '🐶', '🐱', '🐷', '🐨', '🦁'];
 const MIN_P = 2;
 const MAX_P = 10;
 const STORE_KEY = 'bokbulbok-v1';
+const TAU = Math.PI * 2;
 
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
 function loadState() {
-  try {
-    const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-    if (s && Array.isArray(s.players) && s.players.length >= MIN_P) {
-      return { players: s.players.slice(0, MAX_P).map(String) };
-    }
-  } catch (e) { /* 저장소를 못 쓰는 환경이면 기본값 사용 */ }
-  return { players: ['', '', ''] };
+  const st = { players: [], sound: true, day: today() };
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { /* 저장소를 못 쓰는 환경이면 기본값 사용 */ }
+  if (s && Array.isArray(s.players)) {
+    const sameDay = s.day === st.day;                       // 전적은 날짜가 바뀌면 0부터
+    const used = new Set();
+    s.players.slice(0, MAX_P).forEach((p) => {
+      const o = typeof p === 'string' ? { name: p } : (p || {});
+      let f = Number.isInteger(o.face) && o.face >= 0 && o.face < FACES.length && !used.has(o.face) ? o.face : -1;
+      if (f < 0) f = FACES.findIndex((_, k) => !used.has(k));
+      used.add(f);
+      st.players.push({ name: String(o.name || ''), face: f, hits: sameDay ? Number(o.hits) || 0 : 0 });
+    });
+    if (s.sound === false) st.sound = false;
+  }
+  if (st.players.length < MIN_P) st.players = [0, 1, 2].map((f) => ({ name: '', face: f, hits: 0 }));
+  return st;
 }
 const state = loadState();
 function persist() {
@@ -38,10 +55,58 @@ function shuffle(arr) {
   return arr;
 }
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const pname = (i) => state.players[i].trim() || `${i + 1}번`;
+const pname = (i) => state.players[i].name.trim() || `${i + 1}번`;
+const face = (i) => FACES[state.players[i].face];
 const color = (i) => PALETTE[i % PALETTE.length];
+const avatar = (i, cls = '') => `<span class="av ${cls}" style="background:${color(i)}">${face(i)}</span>`;
+const named = (i) => `<b style="color:${color(i)}">${esc(pname(i))}</b>`;
 const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) { /* 무시 */ } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 배경색 위에 올릴 글자색 — 밝은 색(노랑·흰색) 위에는 어두운 글자
+function ink(hex) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#16122e' : '#ffffff';
+}
+
+/* ================= 효과음 (파일 없이 합성) ================= */
+const sfx = (() => {
+  let ctx = null;
+  function audio() {
+    if (!state.sound) return null;
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+      return ctx;
+    } catch (e) { return null; }
+  }
+  function tone(freq, dur, type, vol, when = 0, slideTo = 0) {
+    const c = audio();
+    if (!c) return;
+    const t = c.currentTime + when;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+  return {
+    unlock: audio,                                                           // 첫 터치에서 소리 장치를 깨운다
+    tick() { tone(1500, 0.03, 'square', 0.05); },                            // 룰렛 칸 넘어가는 소리
+    step() { tone(560, 0.05, 'triangle', 0.08); },                           // 사다리 꺾일 때
+    hoof() { tone(150, 0.06, 'triangle', 0.1, 0, 70); },                     // 달리는 발소리
+    pass() { tone(660, 0.09, 'sine', 0.11); tone(990, 0.16, 'sine', 0.11, 0.08); },
+    go() { tone(440, 0.1, 'square', 0.07); tone(880, 0.22, 'square', 0.07, 0.11); },
+    reveal() {
+      tone(120, 0.5, 'sawtooth', 0.16, 0, 50);
+      [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.4, 'triangle', 0.12, 0.12 + i * 0.09));
+    },
+  };
+})();
 
 /* ================= 홈 ================= */
 const homeEl = $('#home');
@@ -54,33 +119,62 @@ function renderPlayers() {
   const n = state.players.length;
   $('#players').innerHTML = state.players.map((p, i) => `
     <li>
-      <span class="dot" style="background:${color(i)}"></span>
-      <input data-i="${i}" value="${esc(p)}" maxlength="8" placeholder="${i + 1}번" aria-label="참가자 ${i + 1} 이름" enterkeyhint="done" autocomplete="off">
-      <button class="icon-btn" data-del="${i}" aria-label="참가자 ${i + 1} 삭제" ${n <= MIN_P ? 'disabled' : ''}>✕</button>
-    </li>`).join('');
+      <button class="av-btn" data-face="${i}" aria-label="참가자 ${i + 1} 캐릭터 바꾸기">${avatar(i)}</button>
+      <input data-i="${i}" value="${esc(p.name)}" maxlength="6" placeholder="${i + 1}번" aria-label="참가자 ${i + 1} 이름" enterkeyhint="done" autocomplete="off">
+      ${n > MIN_P ? `<button class="del" data-del="${i}" aria-label="참가자 ${i + 1} 삭제">✕</button>` : ''}
+    </li>`).join('')
+    + (n < MAX_P ? '<li><button class="av add" data-add aria-label="참가자 추가">+</button><span class="add-label">추가</span></li>' : '');
   $('#player-count').textContent = `${n}명`;
-  $('#add-player').disabled = n >= MAX_P;
+  renderTally();
 }
+function renderTally() {
+  const total = state.players.reduce((sum, p) => sum + p.hits, 0);
+  $('#tally').hidden = total === 0;
+  $('#tally-list').innerHTML = state.players.map((p, i) => `<span>${avatar(i)}${p.hits}</span>`).join('');
+}
+const freeFace = (from = 0) => {
+  const used = new Set(state.players.map((p) => p.face));
+  for (let k = 0; k < FACES.length; k++) {
+    const f = (from + k) % FACES.length;
+    if (!used.has(f)) return f;
+  }
+  return from % FACES.length;
+};
+
 $('#players').addEventListener('input', (e) => {
   const i = e.target.dataset.i;
-  if (i !== undefined) { state.players[+i] = e.target.value; persist(); }
+  if (i !== undefined) { state.players[+i].name = e.target.value; persist(); }
 });
 $('#players').addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-del]');
-  if (!btn || state.players.length <= MIN_P) return;
-  state.players.splice(+btn.dataset.del, 1);
-  persist(); renderPlayers();
-});
-$('#add-player').addEventListener('click', () => {
-  if (state.players.length >= MAX_P) return;
-  state.players.push('');
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.dataset.face !== undefined) {                       // 얼굴 바꾸기: 남이 안 쓰는 다음 얼굴
+    const p = state.players[+t.dataset.face];
+    p.face = freeFace(p.face + 1);
+  } else if (t.dataset.del !== undefined && state.players.length > MIN_P) {
+    state.players.splice(+t.dataset.del, 1);
+  } else if (t.dataset.add !== undefined && state.players.length < MAX_P) {
+    state.players.push({ name: '', face: freeFace(), hits: 0 });
+  } else return;
   persist(); renderPlayers();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
+$('#tally-reset').addEventListener('click', () => {
+  state.players.forEach((p) => { p.hits = 0; });
+  persist(); renderTally();
+});
+const soundBtn = $('#sound');
+function renderSound() { soundBtn.textContent = state.sound ? '🔊' : '🔇'; }
+soundBtn.addEventListener('click', () => {
+  state.sound = !state.sound;
+  persist(); renderSound();
+  sfx.pass();
+});
 
 function goHome() {
   runToken++;
   currentGame = null;
+  stage.innerHTML = '';
   gameEl.hidden = true;
   homeEl.hidden = false;
   renderPlayers();
@@ -89,6 +183,7 @@ function goHome() {
 function startGame(id) {
   runToken++;
   currentGame = id;
+  sfx.unlock();
   homeEl.hidden = true;
   gameEl.hidden = false;
   $('#game-title').textContent = GAMES[id].title;
@@ -102,24 +197,47 @@ $('.games').addEventListener('click', (e) => {
 });
 $('#back').addEventListener('click', goHome);
 
+// 결과 공개 — 판이 멈춘 모습을 잠깐 보여 준 뒤 당첨자 색으로 화면 전체를 덮는다
 function showResult(who) {
-  buzz([120, 60, 240]);
-  const el = document.createElement('section');
-  el.className = 'result';
-  el.innerHTML = `
-    <p class="result-label">당첨</p>
-    <p class="result-name" style="color:${color(who)}">${esc(pname(who))}</p>
-    <div class="row">
-      <button class="btn primary" data-act="again">한 번 더</button>
-      <button class="btn" data-act="home">게임 고르기</button>
-    </div>`;
-  el.addEventListener('click', (e) => {
-    const act = e.target.dataset.act;
-    if (act === 'again') startGame(currentGame);
-    if (act === 'home') goHome();
-  });
-  stage.appendChild(el);
-  el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  const token = runToken;
+  state.players[who].hits++;
+  persist();
+  setTimeout(() => {
+    if (token !== runToken) return;
+    sfx.reveal();
+    buzz([150, 70, 300]);
+    const c = color(who);
+    const text = ink(c);
+    const name = pname(who);
+    const len = [...name].length;
+    const size = len <= 2 ? 100 : len === 3 ? 86 : len === 4 ? 70 : 54;
+    const bits = ['#ffd23f', '#ffffff', '#16122e', ...PALETTE.filter((k) => k !== c)];
+    let confetti = '';
+    for (let k = 0; k < 64; k++) {
+      confetti += `<i style="--x:${rand(100)}%;--w:${8 + rand(8)}px;--h:${8 + rand(14)}px;--k:${bits[rand(bits.length)]};--d:${2200 + rand(2600)}ms;--delay:-${rand(4000)}ms;--r:${200 + rand(700)}deg"></i>`;
+    }
+    const el = document.createElement('section');
+    el.className = 'reveal';
+    el.style.cssText = `--c:${c};--ink:${text};--shade:${text === '#ffffff' ? '#16122e' : '#ffffff'}`;
+    el.innerHTML = `
+      <div class="rays"></div>
+      <div class="confetti">${confetti}</div>
+      <div class="reveal-in">
+        <p class="reveal-tag">오늘의 당첨</p>
+        ${avatar(who, 'reveal-av')}
+        <p class="reveal-name" style="font-size:${size}px">${esc(name)}</p>
+        <div class="row">
+          <button class="btn primary" data-act="again">한 번 더</button>
+          <button class="btn" data-act="home">게임 고르기</button>
+        </div>
+      </div>`;
+    el.addEventListener('click', (e) => {
+      const act = e.target.dataset.act;
+      if (act === 'again') startGame(currentGame);
+      if (act === 'home') goHome();
+    });
+    stage.appendChild(el);
+  }, 1100);
 }
 
 function setupCanvas(canvas, w, h) {
@@ -131,7 +249,19 @@ function setupCanvas(canvas, w, h) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   return ctx;
 }
-function fitText(s, max) { return [...s].length > max ? [...s].slice(0, max).join('') : s; }
+function drawAvatar(ctx, x, y, r, p, alpha = 1) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.fillStyle = color(p);
+  ctx.fill();
+  ctx.font = `${Math.round(r * 1.16)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(face(p), x, y + r * 0.08);
+  ctx.restore();
+}
 
 /* ================= 1. 사다리 타기 ================= */
 // 사다리 생성 — 테스트할 수 있도록 순수 함수로 분리
@@ -174,16 +304,17 @@ function ladderGame(token) {
 
   function renderPick() {
     stage.innerHTML = `
-      <p class="turn"><b style="color:${color(turn)}">${esc(pname(turn))}</b> 차례 · 출발 자리를 고르세요</p>
+      <p class="turn">${named(turn)} 차례 · 출발 자리를 고르세요</p>
       <div class="slots">${taken.map((p, c) => (p < 0
         ? `<button class="slot" data-c="${c}">${c + 1}</button>`
-        : `<button class="slot taken" disabled style="--c:${color(p)}">${esc(pname(p))}</button>`)).join('')}</div>
+        : `<button class="slot taken" disabled>${avatar(p)}</button>`)).join('')}</div>
       <p class="hint">사다리와 결과는 모두 고른 뒤에 만들어집니다</p>`;
     $('.slots', stage).addEventListener('click', (e) => {
       const b = e.target.closest('[data-c]');
       if (!b) return;
       taken[+b.dataset.c] = turn++;
       buzz(15);
+      sfx.step();
       if (turn === n - 1) { taken[taken.indexOf(-1)] = turn++; }   // 마지막 사람은 남은 자리
       if (turn >= n) run(); else renderPick();
     });
@@ -197,20 +328,21 @@ function ladderGame(token) {
     const slotOf = new Array(n);
     taken.forEach((p, c) => { slotOf[p] = c; });
     for (let p = 0; p < n; p++) paths.push(traceLadder(rungs, slotOf[p]));
+    const loser = paths.findIndex((path) => outcome[path.end]);
 
     stage.innerHTML = `
       <p class="turn" id="l-msg">사다리가 만들어졌습니다</p>
-      <div class="ladder-wrap"><canvas id="ladder"></canvas></div>
+      <div class="board"><canvas id="ladder"></canvas></div>
       <button class="btn primary big" id="l-go">출발!</button>`;
     const W = stage.clientWidth;
-    const H = Math.max(340, Math.min(480, Math.round(window.innerHeight * 0.55)));
+    const H = Math.max(400, Math.min(540, Math.round(window.innerHeight * 0.58)));
     const ctx = setupCanvas($('#ladder'), W, H);
-    const padX = n > 6 ? 24 : 40;
-    const top = 48, bot = H - 48;
-    const labelPx = n <= 4 ? 19 : n <= 6 ? 17 : 14;      // 이름·당첨/통과 글씨 — 인원이 적을수록 크게
+    const ar = n <= 5 ? 22 : n <= 7 ? 18 : 14;              // 캐릭터 반지름 — 인원이 적을수록 크게
+    const padX = ar + 12;
+    const top = ar * 2 + 22, bot = H - (ar * 2 + 26);
+    const labelPx = n <= 5 ? 16 : n <= 7 ? 14 : 12;
     const X = (c) => padX + (c * (W - 2 * padX)) / (n - 1);
     const Y = (l) => (l < 0 ? top : l >= LEVELS ? bot : top + ((l + 1) * (bot - top)) / (LEVELS + 1));
-    const nameMax = n > 8 ? 2 : n > 5 ? 3 : 4;
     const revealed = new Array(n).fill(false);
 
     function pathLen(pts) {
@@ -218,78 +350,116 @@ function ladderGame(token) {
       for (let i = 1; i < pts.length; i++) d += Math.abs(X(pts[i][0]) - X(pts[i - 1][0])) + Math.abs(Y(pts[i][1]) - Y(pts[i - 1][1]));
       return d;
     }
-    function strokePath(pts, len, col) {
-      ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // 길을 len 만큼 그리고, 그 끝 지점과 몇 번째 구간인지 돌려준다
+    function strokePath(pts, len, col, width, alpha) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = col; ctx.lineWidth = width;
       ctx.beginPath();
-      ctx.moveTo(X(pts[0][0]), Y(pts[0][1]));
+      let x = X(pts[0][0]), y = Y(pts[0][1]), seg = 0;
+      ctx.moveTo(x, y);
       let left = len;
       for (let i = 1; i < pts.length && left > 0; i++) {
         const x0 = X(pts[i - 1][0]), y0 = Y(pts[i - 1][1]), x1 = X(pts[i][0]), y1 = Y(pts[i][1]);
-        const seg = Math.abs(x1 - x0) + Math.abs(y1 - y0);
-        const t = seg === 0 ? 1 : Math.min(1, left / seg);
-        ctx.lineTo(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
-        left -= seg;
+        const d = Math.abs(x1 - x0) + Math.abs(y1 - y0);
+        const t = d === 0 ? 1 : Math.min(1, left / d);
+        x = x0 + (x1 - x0) * t; y = y0 + (y1 - y0) * t; seg = i;
+        ctx.lineTo(x, y);
+        left -= d;
       }
       ctx.stroke();
+      ctx.restore();
+      return { x, y, seg };
+    }
+    function pill(x, y, text, bg, fg) {
+      const w = labelPx * 2 + 14, h = labelPx + 12, r = 9;
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2 + r, y - h / 2);
+      ctx.arcTo(x + w / 2, y - h / 2, x + w / 2, y + h / 2, r);
+      ctx.arcTo(x + w / 2, y + h / 2, x - w / 2, y + h / 2, r);
+      ctx.arcTo(x - w / 2, y + h / 2, x - w / 2, y - h / 2, r);
+      ctx.arcTo(x - w / 2, y - h / 2, x + w / 2, y - h / 2, r);
+      ctx.fillStyle = bg; ctx.fill();
+      ctx.fillStyle = fg;
+      ctx.font = `900 ${labelPx}px system-ui, sans-serif`;
+      ctx.fillText(text, x, y + 1);
     }
     function draw(done, cur, curLen) {
       ctx.clearRect(0, 0, W, H);
-      ctx.strokeStyle = '#4a467f'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#5a5596'; ctx.lineWidth = 5;
       ctx.beginPath();
       for (let c = 0; c < n; c++) { ctx.moveTo(X(c), top); ctx.lineTo(X(c), bot); }
       rungs.forEach((row, l) => row.forEach((on, c) => { if (on) { ctx.moveTo(X(c), Y(l)); ctx.lineTo(X(c + 1), Y(l)); } }));
       ctx.stroke();
-      for (let p = 0; p < done; p++) strokePath(paths[p].pts, Infinity, color(p));
-      if (cur >= 0) strokePath(paths[cur].pts, curLen, color(cur));
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `900 ${labelPx}px system-ui, sans-serif`;
-      for (let c = 0; c < n; c++) {
-        ctx.fillStyle = color(taken[c]);
-        ctx.fillText(fitText(pname(taken[c]), nameMax), X(c), 22);
-        if (revealed[c]) {
-          ctx.fillStyle = outcome[c] ? '#ff5d5d' : '#3fd6a1';
-          ctx.fillText(outcome[c] ? '당첨' : '통과', X(c), H - 22);
-        } else {
-          ctx.fillStyle = '#736ea6';
-          ctx.fillText('?', X(c), H - 22);
-        }
+      for (let p = 0; p < done; p++) strokePath(paths[p].pts, Infinity, color(p), 5, 0.85);
+      let head = null;
+      if (cur >= 0) {
+        strokePath(paths[cur].pts, curLen, color(cur), 16, 0.25);          // 빛나는 자국
+        head = strokePath(paths[cur].pts, curLen, color(cur), 7, 1);
       }
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (let c = 0; c < n; c++) {
+        const p = taken[c];
+        drawAvatar(ctx, X(c), ar + 8, ar, p, p < done || p === cur ? 0.3 : 1);   // 출발한 캐릭터는 흐리게
+        const by = H - (ar + 12);
+        if (!revealed[c]) {                                                // 아직 안 열린 상자
+          ctx.font = `${Math.round(ar * 1.5)}px system-ui, sans-serif`;
+          ctx.fillText('🎁', X(c), by);
+        } else if (outcome[c]) pill(X(c), by, '당첨', '#ff4d4d', '#ffffff');
+        else pill(X(c), by, '통과', '#3fd6a1', '#0b3527');
+      }
+      if (head) {
+        ctx.beginPath(); ctx.arc(head.x, head.y, ar + 6, 0, TAU);
+        ctx.fillStyle = `${color(cur)}66`; ctx.fill();
+        drawAvatar(ctx, head.x, head.y, ar, cur);
+      }
+      for (let p = 0; p < done; p++) drawAvatar(ctx, X(paths[p].end), bot - ar * 0.4, ar * 0.8, p);   // 도착한 캐릭터
+      return head;
     }
     draw(0, -1, 0);
 
     await new Promise((res) => $('#l-go').addEventListener('click', res, { once: true }));
     if (token !== runToken) return;
+    sfx.go();
     let skip = false;
     const go = $('#l-go');
     go.textContent = '결과 바로 보기';
     go.classList.remove('primary');
     go.addEventListener('click', () => { skip = true; }, { once: true });
 
+    let done = 0;
     for (let p = 0; p < n && !skip; p++) {
-      $('#l-msg').innerHTML = `<b style="color:${color(p)}">${esc(pname(p))}</b> 내려가는 중…`;
+      $('#l-msg').innerHTML = `${named(p)} 내려가는 중…`;
       const total = pathLen(paths[p].pts);
       const dur = 2400;
       const t0 = performance.now();
+      let lastSeg = 0;
       await new Promise((res) => {
         (function frame(now) {
           if (token !== runToken) return res();
           const t = Math.min(1, (now - t0) / dur);
-          draw(p, p, total * t);
+          const head = draw(p, p, total * t);
+          if (head.seg !== lastSeg) { lastSeg = head.seg; sfx.step(); }   // 꺾일 때마다 소리
           if (t < 1 && !skip) requestAnimationFrame(frame); else res();
         })(t0);
       });
       if (token !== runToken) return;
+      if (skip) break;
       revealed[paths[p].end] = true;
-      draw(p + 1, -1, 0);
-      if (outcome[paths[p].end]) buzz(80);
-      if (!skip) await sleep(550);
+      done = p + 1;
+      draw(done, -1, 0);
+      if (p === loser) break;                                             // 당첨 상자가 열리면 더 볼 것이 없다
+      sfx.pass();
+      buzz(15);
+      await sleep(550);
     }
     if (token !== runToken) return;
     revealed.fill(true);
-    draw(n, -1, 0);
+    draw(done > loser ? done : n, -1, 0);
     go.remove();
-    $('#l-msg').textContent = '결과가 나왔습니다';
-    showResult(paths.findIndex((path) => outcome[path.end]));
+    $('#l-msg').innerHTML = `${named(loser)} 상자에서 당첨!`;
+    showResult(loser);
   }
 
   renderPick();
@@ -298,10 +468,10 @@ function ladderGame(token) {
 /* ================= 2. 룰렛 ================= */
 function rouletteGame(token) {
   const n = state.players.length;
-  const TAU = Math.PI * 2;
   const a = TAU / n;
   const mod = (x) => ((x % TAU) + TAU) % TAU;
   let rot = 0;
+  let lit = 0;            // 테두리 전구 깜빡임 단계
 
   stage.innerHTML = `
     <p class="turn" id="r-msg">화살표에 멈춘 사람이 당첨</p>
@@ -312,37 +482,51 @@ function rouletteGame(token) {
   const msg = $('#r-msg');
   const btn = $('#spin');
   const pointer = $('.pointer', stage);
+  const C = size / 2;
+  const R = C - 22;                                   // 판 반지름 (바깥은 전구 테두리)
+  const fr = Math.min(28, R * Math.sin(a / 2) * 0.5); // 칸 안 얼굴 크기
 
   function draw() {
-    const R = size / 2 - 6;
     ctx.clearRect(0, 0, size, size);
-    ctx.save();
-    ctx.translate(size / 2, size / 2);
-    ctx.rotate(rot - Math.PI / 2);
-    for (let i = 0; i < n; i++) {
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, R, i * a, (i + 1) * a);
-      ctx.closePath();
-      ctx.fillStyle = color(i);
-      ctx.fill();
-      ctx.strokeStyle = '#14122b'; ctx.lineWidth = 3; ctx.stroke();
-      ctx.save();
-      ctx.rotate((i + 0.5) * a);
-      ctx.fillStyle = '#16122e';
-      ctx.font = `900 ${n <= 5 ? 24 : n <= 7 ? 20 : 16}px system-ui, sans-serif`;
-      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      ctx.fillText(fitText(pname(i), 5), R - 14, 0);
-      ctx.restore();
+    // 테두리와 전구 (판과 함께 돌지 않는다)
+    ctx.beginPath(); ctx.arc(C, C, C - 2, 0, TAU);
+    ctx.fillStyle = '#2a2656'; ctx.fill();
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 4; ctx.stroke();
+    for (let k = 0; k < 20; k++) {
+      const on = (k + lit) % 2 === 0;
+      const t = (k * TAU) / 20;
+      ctx.beginPath(); ctx.arc(C + (R + 10) * Math.cos(t), C + (R + 10) * Math.sin(t), on ? 5.5 : 4.5, 0, TAU);
+      ctx.shadowColor = '#ffd23f'; ctx.shadowBlur = on ? 10 : 0;
+      ctx.fillStyle = on ? '#fffbe0' : '#b8900a'; ctx.fill();
     }
-    ctx.beginPath(); ctx.arc(0, 0, 22, 0, TAU);
+    ctx.shadowBlur = 0;
+    // 칸
+    for (let i = 0; i < n; i++) {
+      const a0 = rot - Math.PI / 2 + i * a;
+      ctx.beginPath(); ctx.moveTo(C, C); ctx.arc(C, C, R, a0, a0 + a); ctx.closePath();
+      ctx.fillStyle = color(i); ctx.fill();
+      ctx.strokeStyle = '#14122b'; ctx.lineWidth = 3; ctx.stroke();
+      const am = a0 + a / 2;                           // 얼굴은 판이 돌아도 늘 바로 선 채로
+      const fx = C + R * 0.64 * Math.cos(am), fy = C + R * 0.64 * Math.sin(am);
+      ctx.beginPath(); ctx.arc(fx, fy, fr, 0, TAU);
+      ctx.fillStyle = '#ffffffe6'; ctx.fill();
+      ctx.font = `${Math.round(fr * 1.2)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#16122e';
+      ctx.fillText(face(i), fx, fy + fr * 0.08);
+    }
+    // 입체감을 주는 가장자리 그늘과 가운데 축
+    const shade = ctx.createRadialGradient(C, C, R * 0.55, C, C, R);
+    shade.addColorStop(0, '#00000000'); shade.addColorStop(1, '#00000055');
+    ctx.beginPath(); ctx.arc(C, C, R, 0, TAU); ctx.fillStyle = shade; ctx.fill();
+    ctx.beginPath(); ctx.arc(C, C, 24, 0, TAU);
     ctx.fillStyle = '#14122b'; ctx.fill();
-    ctx.strokeStyle = '#f4f1ff'; ctx.lineWidth = 4; ctx.stroke();
-    ctx.restore();
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 5; ctx.stroke();
   }
 
   btn.addEventListener('click', () => {
     btn.remove();
+    sfx.go();
     msg.textContent = '두구두구…';
     const who = rand(n);                                 // 멈출 칸 = 당첨자
     const f = (8 + rand(85)) / 100;                      // 칸 안에서의 위치 (경계 바로 위는 피함)
@@ -350,14 +534,17 @@ function rouletteGame(token) {
     const dur = 10000;                                   // 마지막 3초쯤은 한두 칸을 기어가듯 넘어간다
     const t0 = performance.now();
     let lastTick = -1;
+    let lastSound = 0;
     (function frame(now) {
       if (token !== runToken) return;
       const t = Math.min(1, (now - t0) / dur);
       rot = to * (1 - Math.pow(1 - t, 3));
+      lit = Math.floor((now - t0) / 170);
       const tick = Math.floor(mod(-rot) / a);
       if (tick !== lastTick) {
         lastTick = tick;
-        if (t > 0.45) {                                    // 느려진 뒤로는 칸이 넘어갈 때마다 바늘이 튕긴다
+        if (now - lastSound > 45) { lastSound = now; sfx.tick(); }   // 칸이 넘어갈 때마다 딸깍
+        if (t > 0.45) {                                              // 느려진 뒤로는 바늘도 튕긴다
           buzz(t > 0.7 ? 25 : 8);
           pointer.classList.remove('tick');
           void pointer.offsetWidth;
@@ -366,7 +553,7 @@ function rouletteGame(token) {
       }
       draw();
       if (t < 1) return requestAnimationFrame(frame);
-      msg.innerHTML = `<b style="color:${color(who)}">${esc(pname(who))}</b> 당첨!`;
+      msg.innerHTML = `${named(who)} 당첨!`;
       showResult(who);
     })(t0);
   }, { once: true });
@@ -412,72 +599,78 @@ function raceProgress(pts, t) {
 
 function raceGame(token) {
   const n = state.players.length;
-  const laneH = n <= 5 ? 62 : n <= 7 ? 52 : 42;
+  const laneH = n <= 5 ? 66 : n <= 7 ? 56 : 44;
+  const chip = n <= 6 ? 34 : n <= 8 ? 28 : 22;        // 순위표 얼굴 크기
   stage.innerHTML = `
+    <div class="rankbar" id="g-rank" style="--s:${chip}px"></div>
+    <div class="stadium" style="--lane-h:${laneH}px">
+      <div class="crowd"></div>
+      ${state.players.map((_, p) => `<div class="lane"><i class="dust"></i>${avatar(p, 'runner')}<span class="rank"></span></div>`).join('')}
+      <i class="tape"></i>
+    </div>
     <p class="turn" id="g-msg">다 같이 출발 · 꼴찌가 당첨</p>
-    <div class="race" style="--lane-h:${laneH}px">${state.players.map((_, p) => `
-      <div class="lane">
-        <span class="lane-name" style="color:${color(p)}">${esc(fitText(pname(p), 3))}</span>
-        <div class="track">
-          <div class="trail" style="background:${color(p)}"></div>
-          <span class="runner" style="background:${color(p)}"><span>🐎</span></span>
-          <i class="finish"></i>
-        </div>
-        <span class="rank"></span>
-      </div>`).join('')}</div>
     <button class="btn primary big" id="g-go">출발!</button>`;
   const msg = $('#g-msg');
+  const rankbar = $('#g-rank');
+  const stadium = $('.stadium', stage);
   const lanes = [...stage.querySelectorAll('.lane')];
-  const tracks = lanes.map((l) => $('.track', l));
   const runnerEls = lanes.map((l) => $('.runner', l));
-  const trails = lanes.map((l) => $('.trail', l));
+  const dusts = lanes.map((l) => $('.dust', l));
   const ranks = lanes.map((l) => $('.rank', l));
+  const rw = runnerEls[0].offsetWidth;
 
   function place(p, pos) {
-    const W = tracks[p].clientWidth;
-    const rw = runnerEls[p].offsetWidth;
-    const front = rw + 4 + pos * (W - 20 - rw - 4);     // 달리는 말의 앞쪽 끝 — pos 1 이면 결승선
+    const W = lanes[p].clientWidth;
+    const front = rw + 6 + pos * (W - 56 - rw - 6);     // 달리는 캐릭터의 앞쪽 끝 — pos 1 이면 결승선
     runnerEls[p].style.transform = `translate(${front - rw}px, -50%)`;
-    trails[p].style.width = `${Math.max(0, front - rw / 2)}px`;
+    dusts[p].style.transform = `translateX(${front - rw * 1.75}px)`;
+  }
+  // 위쪽 순위표: 들어온 사람은 등수 고정, 달리는 사람은 지금 위치 순
+  function showRanks(list, loser = -1) {
+    rankbar.innerHTML = list.map((p, r) => `<span class="${p === loser ? 'last' : ''}"><i>${p === loser ? '꼴찌' : r + 1}</i>${avatar(p)}</span>`).join('');
   }
   for (let p = 0; p < n; p++) place(p, 0);
+  showRanks(state.players.map((_, p) => p));
 
   $('#g-go').addEventListener('click', (e) => {
     e.currentTarget.remove();
+    sfx.go();
     const plan = buildRace(n);
-    const raceEl = $('.race', stage);
-    raceEl.classList.add('running');
+    stadium.classList.add('running');
     const t0 = performance.now();
     let arrived = 0;
     let lastTalk = -1000;
+    let lastHoof = 0;
     (function frame(now) {
       if (token !== runToken) return;
       const t = now - t0;
       const pos = plan.runners.map((pts) => raceProgress(pts, t));
       for (let p = 0; p < n; p++) place(p, pos[p]);
+      if (t - lastHoof > 130) { lastHoof = t; sfx.hoof(); }
       while (arrived < n - 1 && t >= plan.finish[plan.order[arrived]]) {
         const p = plan.order[arrived++];
         ranks[p].textContent = `${arrived}등`;
         runnerEls[p].classList.add('done');
+        dusts[p].hidden = true;
+        sfx.pass();
         buzz(12);
       }
+      const running = plan.order.slice(arrived).sort((x, y) => pos[y] - pos[x]);
       if (arrived >= n - 1) {                           // 한 명만 남으면 그 사람이 꼴찌
         const loser = plan.order[n - 1];
-        raceEl.classList.remove('running');
+        stadium.classList.remove('running');
         lanes[loser].classList.add('lose');
         ranks[loser].textContent = '꼴찌';
-        msg.innerHTML = `<b style="color:${color(loser)}">${esc(pname(loser))}</b> 꼴찌!`;
+        showRanks(plan.order, loser);
+        msg.innerHTML = `${named(loser)} 꼴찌!`;
         showResult(loser);
         return;
       }
-      if (t - lastTalk > 450) {
+      if (t - lastTalk > 350) {
         lastTalk = t;
-        if (arrived === 0) {
-          const lead = pos.indexOf(Math.max(...pos));
-          msg.innerHTML = `<b style="color:${color(lead)}">${esc(pname(lead))}</b> 선두`;
-        } else {
-          msg.textContent = `${arrived}명 도착 · 남은 ${n - arrived}명 중 꼴찌는?`;
-        }
+        showRanks([...plan.order.slice(0, arrived), ...running]);
+        if (arrived === 0) msg.innerHTML = `${named(running[0])} 선두 · ${named(running[n - 1])} 위험`;
+        else msg.textContent = `${arrived}명 도착 · 남은 ${n - arrived}명 중 꼴찌는?`;
       }
       requestAnimationFrame(frame);
     })(t0);
@@ -490,6 +683,7 @@ const GAMES = {
   race: { title: '달리기 경주', start: raceGame },
 };
 
+renderSound();
 renderPlayers();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
