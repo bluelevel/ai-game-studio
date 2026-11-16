@@ -472,48 +472,36 @@ function cardGame(token) {
 }
 
 /* ================= 4. 시한폭탄 ================= */
+// 공정성: 한 차례에 정확히 한 번만 누른다(선택 없음). 시작하는 사람을 균등하게 뽑으므로
+// 터지는 횟수가 몇이든 걸리는 사람은 (시작 + 횟수 - 1) mod n — 모두 정확히 1/n 이다.
 function bombGame(token) {
   const n = state.players.length;
   const fuse = 2 * n + rand(2 * n + 1);   // 터지는 누름 횟수: 2n ~ 4n, 아무도 모름
-  const MAX_TAPS = 3;
   let turn = rand(n);
-  let taps = 0;
   let total = 0;
   let over = false;
+  let cooling = false;                    // 넘겨받기 전에 같은 사람이 연달아 누르는 것 방지
 
   stage.innerHTML = `
     <p class="turn" id="b-msg"></p>
     <button class="bomb-btn" id="bomb" aria-label="폭탄 누르기">💣</button>
-    <div class="pips">${'<i></i>'.repeat(MAX_TAPS)}</div>
-    <button class="btn big" id="pass" disabled>다음 사람에게 넘기기</button>
-    <p class="hint">자기 차례에 1~3번 누르고 넘깁니다 · 언제 터질지는 아무도 모릅니다 · 1명만 걸리는 게임</p>`;
+    <p class="hint">한 사람이 한 번씩 누르고 다음 사람에게 넘깁니다 · 시작 순서와 터지는 시점은 무작위 · 1명만 걸리는 게임</p>`;
   const msg = $('#b-msg');
   const bomb = $('#bomb');
-  const pass = $('#pass');
-  const pips = [...stage.querySelectorAll('.pips i')];
 
   function update() {
-    msg.innerHTML = `<b style="color:${color(turn)}">${esc(pname(turn))}</b> 차례 · 지금까지 ${total}번`;
-    pips.forEach((p, i) => p.classList.toggle('on', i < taps));
-    pass.disabled = taps < 1;
-  }
-  function next() {
-    turn = (turn + 1) % n;
-    taps = 0;
-    update();
+    msg.innerHTML = `<b style="color:${color(turn)}">${esc(pname(turn))}</b> 차례 · 한 번 누르세요 <span class="muted">(${total}번째까지 무사)</span>`;
   }
   bomb.addEventListener('click', () => {
-    if (over || token !== runToken) return;
-    total++; taps++;
+    if (over || cooling || token !== runToken) return;
+    total++;
     if (total >= fuse) {
       over = true;
       bomb.textContent = '💥';
       bomb.classList.add('exploded');
       bomb.disabled = true;
-      pass.remove();
       document.body.classList.add('boom');
       msg.innerHTML = `<b style="color:${color(turn)}">${esc(pname(turn))}</b> 손에서 터졌습니다!`;
-      pips.forEach((p, i) => p.classList.toggle('on', i < taps));
       showResult([turn]);
       return;
     }
@@ -521,9 +509,11 @@ function bombGame(token) {
     bomb.classList.remove('shake');
     void bomb.offsetWidth;
     bomb.classList.add('shake');
-    if (taps >= MAX_TAPS) next(); else update();
+    turn = (turn + 1) % n;
+    update();
+    cooling = true;
+    setTimeout(() => { cooling = false; }, 450);
   });
-  pass.addEventListener('click', () => { if (!over && taps >= 1) next(); });
 
   update();
 }

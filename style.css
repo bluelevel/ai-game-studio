@@ -208,8 +208,5 @@ canvas { display: block; width: 100%; }
   50% { transform: translate(5px, -2px) rotate(4deg); }
   75% { transform: translate(-3px, 1px) rotate(-2deg); }
 }
-.pips { display: flex; justify-content: center; gap: 8px; }
-.pips i { width: 14px; height: 14px; border-radius: 50%; background: var(--panel-2); border: 2px solid var(--line); }
-.pips i.on { background: var(--danger); border-color: var(--danger); }
 body.boom { animation: flash .5s; }
 @keyframes flash { 0%, 40% { background: #fff; } }
