@@ -77,7 +77,7 @@ const sfx = (() => {
     if (!state.sound) return null;
     try {
       ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state !== 'running') ctx.resume().catch(() => {});   // iOS는 앱 전환·전화 뒤 'interrupted' 상태가 된다
       return ctx;
     } catch (e) { return null; }
   }
