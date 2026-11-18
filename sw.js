@@ -1,6 +1,6 @@
 // 온라인이면 서버의 최신 파일을 쓰고(받은 것은 캐시에 저장), 오프라인이거나 서버가 2초 안에
 // 답하지 않으면 캐시로 연다. 늦게 온 서버 응답도 캐시에 저장되어 다음에 열 때 반영된다.
-const CACHE = 'bokbulbok-v16';
+const CACHE = 'bokbulbok-v17';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 const WAIT = 2000;
 let slowUntil = 0;   // 서버가 한 번 늦으면 잠시 동안은 캐시로 바로 연다 (파일마다 2초씩 기다리지 않게)

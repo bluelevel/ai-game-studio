@@ -231,7 +231,7 @@ $('#players').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
 $('#tally-reset').addEventListener('click', () => {
   const day = state.history[dayKey()];
-  if (!day || !confirm(`오늘 기록 ${day.n}판을 지울까요?`)) return;
+  if (!day) return;
   delete state.history[dayKey()];
   persist(); renderTally();
 });
@@ -351,22 +351,15 @@ $('#h-body').addEventListener('click', (e) => {
   const card = e.target.closest('[data-day]');
   const dk = card && card.dataset.day;
   const g = e.target.closest('[data-del-game]');
-  if (g) {
-    const day = state.history[dk];
-    const ev = day.games[+g.dataset.delGame];
-    const who = (day.r[ev.l] || {}).name || '?';
-    const [, mo, da] = dk.split('-').map(Number);
-    const hm = `${String(Math.floor(ev.m / 60)).padStart(2, '0')}:${String(ev.m % 60).padStart(2, '0')}`;
-    if (confirm(`${mo}월 ${da}일 ${hm} ${GAME_NAMES()[ev.g] || ''} — ${who} 당첨\n이 판을 지울까요?`)) { deleteGame(dk, +g.dataset.delGame); renderHistory(); renderTally(); }
+  if (g) {                                                   // 판 하나 지우기 — 확인 없이 바로
+    deleteGame(dk, +g.dataset.delGame);
+    renderHistory(); renderTally();
     return;
   }
-  if (e.target.closest('[data-del-day]')) {
-    const [, mo, da] = dk.split('-').map(Number);
-    if (confirm(`${mo}월 ${da}일 기록 ${state.history[dk].n}판을 모두 지울까요?`)) {
-      delete state.history[dk];
-      openDays.delete(dk);
-      persist(); renderHistory(); renderTally();
-    }
+  if (e.target.closest('[data-del-day]')) {                  // 하루치 지우기 — 확인 없이 바로
+    delete state.history[dk];
+    openDays.delete(dk);
+    persist(); renderHistory(); renderTally();
     return;
   }
   if (e.target.id === 'h-clear' && confirm('지금까지의 기록을 모두 지울까요? 되돌릴 수 없습니다.')) {
