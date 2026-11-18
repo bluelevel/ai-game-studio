@@ -10,8 +10,8 @@ const MIN_P = 2;
 const MAX_P = 10;
 const STORE_KEY = 'bokbulbok-v1';
 const TAU = Math.PI * 2;
-// 깜짝 이벤트가 나올 확률(%) — 사다리 연장, 룰렛 한 바퀴 더, 달리기 부스터
-const SURPRISE = { ladder: 25, roulette: 25, race: 25 };
+// 깜짝 이벤트가 나올 확률(%) — 사다리 연장, 룰렛 한 바퀴 더, 달리기 부스터, 의자 뺏기 가짜 멈춤
+const SURPRISE = { ladder: 25, roulette: 25, race: 25, chairs: 25 };
 
 function today() {
   const d = new Date();
@@ -104,6 +104,8 @@ const sfx = (() => {
     pass() { tone(660, 0.09, 'sine', 0.11); tone(990, 0.16, 'sine', 0.11, 0.08); },
     go() { tone(440, 0.1, 'square', 0.07); tone(880, 0.22, 'square', 0.07, 0.11); },
     twist() { tone(260, 0.55, 'sawtooth', 0.1, 0, 1500); },                  // 깜짝 이벤트 (부스터·한 바퀴 더·사다리 연장)
+    note(f, bass) { tone(f, 0.13, 'triangle', 0.08); if (bass) tone(bass, 0.12, 'square', 0.035); },   // 의자 뺏기 음악 한 음
+    halt() { tone(700, 0.28, 'sawtooth', 0.09, 0, 90); },                    // 음악이 뚝 끊기는 소리
     reveal() {
       tone(120, 0.5, 'sawtooth', 0.16, 0, 50);
       [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.4, 'triangle', 0.12, 0.12 + i * 0.09));
@@ -811,10 +813,175 @@ function raceGame(token) {
   }, { once: true });
 }
 
+/* ================= 4. 의자 뺏기 ================= */
+// 계획 — 못 앉을 사람(loser)을 먼저 균등하게 뽑고, 음악이 멈추는 순간 그 사람이 마침
+// 의자 사이 빈틈에 오도록 도는 위치를 맞춘다. 나머지는 가장 가까운 의자에 앉는다.
+function buildChairs(n) {
+  const loser = rand(n);
+  const T = 5000 + rand(5001);                                   // 음악이 흐르는 시간 (ms)
+  const fake = rand(100) < SURPRISE.chairs ? 2200 + rand(T - 4000) : -1;   // 가짜 멈춤 시각, 없으면 -1
+  const gap = (rand(360) * TAU) / 360;                           // 빈틈(의자가 없는 곳)의 방향
+  const target = n > 2 && rand(2) ? n - 2 : 0;                   // 못 앉는 사람이 노리다 놓치는 의자
+  return { loser, T, fake, gap, target };
+}
+// 의자 k 의 방향, 참가자 p 가 앉을 의자 (못 앉는 사람은 -1)
+const chairAngle = (plan, n, k) => plan.gap + ((k + 0.5) * TAU) / (n - 1);
+const chairOf = (plan, n, p) => (p === plan.loser ? -1 : (p - plan.loser + n) % n - 1);
+
+function chairsGame(token) {
+  const n = state.players.length;
+  stage.innerHTML = `
+    <p class="turn" id="c-msg">음악이 멈추면 의자로 · 못 앉으면 당첨</p>
+    <div class="board"><canvas id="chairs"></canvas></div>
+    <button class="btn primary big" id="c-go">음악 시작!</button>`;
+  const msg = $('#c-msg');
+  const W = $('.board', stage).clientWidth;
+  const H = Math.min(W, 400);
+  const ctx = setupCanvas($('#chairs'), W, H);
+  const cx = W / 2, cy = H / 2;
+  const ar = n <= 5 ? 24 : n <= 7 ? 20 : 17;                     // 캐릭터 반지름
+  const rp = Math.min(cx, cy) - ar - 8;                          // 도는 원
+  const rc = rp * 0.5;                                           // 의자 원
+  const cs = n > 2 ? Math.min(ar * 1.05, rc * Math.sin(Math.PI / (n - 1)) * 0.85) : ar * 1.05;   // 의자 크기
+  const OMEGA = TAU / 3600;                                      // 한 바퀴 3.6초
+  const at = (r, t) => [cx + r * Math.cos(t), cy + r * Math.sin(t)];
+  const lerp = (a, b, u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+  const ease = (u) => 1 - Math.pow(1 - Math.min(1, Math.max(0, u)), 3);
+
+  function drawChair(k, plan) {
+    const [x, y] = at(rc, chairAngle(plan, n, k));
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(chairAngle(plan, n, k) + Math.PI / 2);          // 등받이가 바깥쪽을 보게
+    ctx.fillStyle = '#7a4a2a';
+    ctx.beginPath(); ctx.roundRect(-cs * 0.9, -cs * 1.05, cs * 1.8, cs * 0.42, cs * 0.15); ctx.fill();
+    ctx.fillStyle = '#c98a4b';
+    ctx.beginPath(); ctx.roundRect(-cs * 0.8, -cs * 0.7, cs * 1.6, cs * 1.45, cs * 0.25); ctx.fill();
+    ctx.restore();
+  }
+  // pos[p] = [x, y], seated[p] = 앉았는지, note = 가운데 표시
+  function draw(plan, pos, seated, note) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath(); ctx.arc(cx, cy, rp + ar + 4, 0, TAU);
+    ctx.fillStyle = '#2a2656'; ctx.fill();
+    ctx.setLineDash([6, 10]); ctx.strokeStyle = '#5a5596'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, cy, rp, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    for (let k = 0; k < n - 1; k++) drawChair(k, plan);
+    ctx.font = `900 ${Math.round(rc * 0.55)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(note, cx, cy);
+    for (let p = 0; p < n; p++) if (seated[p]) drawAvatar(ctx, pos[p][0], pos[p][1], ar * 0.92, p);
+    for (let p = 0; p < n; p++) if (!seated[p]) drawAvatar(ctx, pos[p][0], pos[p][1], ar, p);
+  }
+
+  // 시작 전 모습: 아무 계획이나 써서 자리만 보여 준다 (결과와 무관)
+  const preview = { gap: -Math.PI / 2, loser: 0 };
+  draw(preview, state.players.map((_, p) => at(rp, -Math.PI / 2 + (p * TAU) / n)), [], '♪');
+
+  $('#c-go').addEventListener('click', (e) => {
+    e.currentTarget.remove();
+    sfx.go();
+    const plan = buildChairs(n);
+    const base = plan.gap - (plan.loser * TAU) / n - OMEGA * plan.T;   // w = T 일 때 loser 가 빈틈에 온다
+    const ringAngle = (p, w) => base + (p * TAU) / n + OMEGA * w;
+
+    // 음악 — 한 음씩 그때그때 내므로 멈추면 바로 끊긴다
+    const MEL = [523, 659, 784, 659, 587, 698, 880, 698, 523, 659, 784, 1047, 988, 784, 659, 587];
+    const BASS = [131, 0, 196, 0];
+    let playing = false, step = 0, beat = null;
+    const music = (on) => {
+      playing = on;
+      clearTimeout(beat);
+      if (!on) return;
+      (function tickNote() {
+        if (!playing || token !== runToken) return;
+        sfx.note(MEL[step % MEL.length], BASS[step % BASS.length]);
+        step++;
+        beat = setTimeout(tickNote, 165);
+      })();
+    };
+    music(true);
+    msg.innerHTML = '♪ 빙글빙글…';
+
+    let phase = 'walk', w = 0, last = performance.now(), mark = 0, fakeDone = false;
+    let said = false, sat = false;
+    const seated = new Array(n).fill(false);
+    const startPos = [];
+    let missAt = null;
+
+    (function frame(now) {
+      if (token !== runToken) { music(false); return; }
+      const dt = Math.min(50, now - last);
+      last = now;
+      let pos;
+      let note = '♪';
+      if (phase === 'walk') {
+        w += dt;
+        if (plan.fake >= 0 && !fakeDone && w >= plan.fake) {
+          w = plan.fake; phase = 'fake'; mark = now; fakeDone = true; said = false;
+          music(false); sfx.halt();
+          msg.innerHTML = '멈췄…다?';
+        } else if (w >= plan.T) {
+          w = plan.T; phase = 'rush'; mark = now;
+          music(false); sfx.halt();
+          msg.innerHTML = '<b style="color:#ffd23f">멈춰!</b> 의자로!';
+        }
+        pos = state.players.map((_, p) => {
+          const [x, y] = at(rp, ringAngle(p, w));
+          return [x, y - Math.abs(Math.sin(w / 140 + p)) * 5];  // 통통 튀며 걷기
+        });
+        if (phase === 'rush') for (let p = 0; p < n; p++) startPos[p] = at(rp, ringAngle(p, w));
+      } else if (phase === 'fake') {                          // 다들 앉으려다 다시 일어난다
+        const e = now - mark;
+        const lunge = e < 300 ? ease(e / 300) : e < 800 ? 1 - ease((e - 300) / 500) : 0;
+        pos = state.players.map((_, p) => at(rp - (rp - rc) * 0.3 * lunge, ringAngle(p, w)));
+        note = '?';
+        if (e >= 450 && !said) {
+          said = true;
+          sfx.twist();
+          msg.innerHTML = '앗, <b style="color:#ffd23f">다시!</b> ♪';
+        }
+        if (e >= 1000) { phase = 'walk'; music(true); }
+      } else {                                                // 의자로 달려가기
+        const e = now - mark;
+        note = '!';
+        pos = state.players.map((_, p) => {
+          const k = chairOf(plan, n, p);
+          if (k >= 0) {
+            const u = ease(e / 550);
+            if (u >= 1) seated[p] = true;
+            return lerp(startPos[p], at(rc, chairAngle(plan, n, k)), u);
+          }
+          // 못 앉는 사람: 한발 늦게 출발해 의자를 노리다 놓치고 빈틈에 선다
+          const goal = at(rc, chairAngle(plan, n, plan.target));
+          const e2 = e - 160;
+          if (e2 < 420) return lerp(startPos[p], goal, 0.55 * ease(e2 / 420));
+          missAt = missAt || lerp(startPos[p], goal, 0.55);
+          const stand = lerp(missAt, at((rc + rp) / 2, plan.gap), ease((e2 - 420) / 350));
+          const shake = e2 > 800 ? Math.sin(e2 / 30) * 3 : 0;
+          return [stand[0] + shake, stand[1]];
+        });
+        if (e >= 560 && !sat) { sat = true; sfx.step(); }
+        if (e >= 1250 && phase === 'rush') {
+          phase = 'done';
+          msg.innerHTML = `${named(plan.loser)} 못 앉았다!`;
+          showResult(plan.loser);
+        }
+        if (e >= 2400) { draw(plan, pos, seated, note); return; }
+      }
+      draw(plan, pos, seated, note);
+      requestAnimationFrame(frame);
+    })(last);
+  }, { once: true });
+}
+
 const GAMES = {
   ladder: { title: '사다리 타기', start: ladderGame },
   roulette: { title: '룰렛', start: rouletteGame },
   race: { title: '달리기 경주', start: raceGame },
+  chairs: { title: '의자 뺏기', start: chairsGame },
 };
 
 renderSound();

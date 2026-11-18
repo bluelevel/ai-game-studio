@@ -1,7 +1,7 @@
 {
   "name": "복불복",
   "short_name": "복불복",
-  "description": "사다리 타기, 룰렛, 달리기 경주 — 여럿이 하는 복불복 게임",
+  "description": "사다리 타기, 룰렛, 달리기 경주, 의자 뺏기 — 여럿이 하는 복불복 게임",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",

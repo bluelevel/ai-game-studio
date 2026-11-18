@@ -125,6 +125,7 @@ input::placeholder { color: #736ea6; font-weight: 600; }
 .game-card:nth-child(1) { background: linear-gradient(135deg, #ffd23f, #ffb03f); }
 .game-card:nth-child(2) { background: linear-gradient(135deg, #ff7ab8, #ff5d8f); }
 .game-card:nth-child(3) { background: linear-gradient(135deg, #5fd1ff, #3d9bff); }
+.game-card:nth-child(4) { background: linear-gradient(135deg, #7ff09a, #3fd66a); }
 
 #tally { display: flex; align-items: center; gap: 10px; margin-top: 22px; font-size: 15px; color: var(--muted); }
 #tally b { flex: none; }
