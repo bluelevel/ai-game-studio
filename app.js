@@ -13,27 +13,54 @@ const TAU = Math.PI * 2;
 // 깜짝 이벤트가 나올 확률(%) — 사다리 연장, 룰렛 한 바퀴 더, 달리기 부스터, 의자 뺏기 가짜 멈춤
 const SURPRISE = { ladder: 25, roulette: 25, race: 25, chairs: 25 };
 
-function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+// 날짜 키 'YYYY-MM-DD' (폰의 현지 시각 기준) — 문자열 순서가 곧 날짜 순서
+function dayKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+// 저장 모양: { players: [{name, face}], sound, history: { 'YYYY-MM-DD': { n: 판 수, g: {게임: 판 수}, r: {사람키: {name, face, plays, hits}} } } }
+// 기록은 지우기 전까지 계속 쌓인다. 확률과는 아무 상관이 없다.
 function loadState() {
-  const st = { players: [], sound: true, day: today() };
+  const st = { players: [], sound: true, history: {} };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { /* 저장소를 못 쓰는 환경이면 기본값 사용 */ }
   if (s && Array.isArray(s.players)) {
-    const sameDay = s.day === st.day;                       // 전적은 날짜가 바뀌면 0부터
     const used = new Set();
     s.players.slice(0, MAX_P).forEach((p) => {
       const o = typeof p === 'string' ? { name: p } : (p || {});
       let f = Number.isInteger(o.face) && o.face >= 0 && o.face < FACES.length && !used.has(o.face) ? o.face : -1;
       if (f < 0) f = FACES.findIndex((_, k) => !used.has(k));
       used.add(f);
-      st.players.push({ name: String(o.name || ''), face: f, hits: sameDay ? Number(o.hits) || 0 : 0 });
+      st.players.push({ name: String(o.name || ''), face: f, hits: Number(o.hits) || 0 });
     });
     if (s.sound === false) st.sound = false;
+    if (s.history && typeof s.history === 'object') {
+      for (const [day, rec] of Object.entries(s.history)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !rec || typeof rec.r !== 'object') continue;
+        const r = {};
+        for (const [k, v] of Object.entries(rec.r)) {
+          if (!v) continue;
+          const face = Number.isInteger(v.face) && v.face >= 0 && v.face < FACES.length ? v.face : 0;
+          r[k] = { name: String(v.name || ''), face, plays: Number(v.plays) || 0, hits: Number(v.hits) || 0 };
+        }
+        st.history[day] = { n: Number(rec.n) || 0, g: rec.g && typeof rec.g === 'object' ? { ...rec.g } : {}, r };
+      }
+    }
+    // 예전 버전(오늘 전적만 hits 로 저장)에서 넘어온 경우 — 오늘 것이면 기록으로 옮긴다
+    const d = new Date();
+    if (!s.history && s.day === `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`) {
+      const total = st.players.reduce((sum, p) => sum + p.hits, 0);
+      if (total > 0) {
+        const r = {};
+        st.players.forEach((p, i) => {
+          const k = p.name.trim() ? `n:${p.name.trim()}` : `f:${p.face}`;
+          r[k] = { name: p.name.trim() || `${i + 1}번`, face: p.face, plays: total, hits: p.hits };
+        });
+        st.history[dayKey(d)] = { n: total, g: {}, r };
+      }
+    }
   }
-  if (st.players.length < MIN_P) st.players = [0, 1, 2].map((f) => ({ name: '', face: f, hits: 0 }));
+  st.players.forEach((p) => { delete p.hits; });
+  if (st.players.length < MIN_P) st.players = [0, 1, 2].map((f) => ({ name: '', face: f }));
   return st;
 }
 const state = loadState();
@@ -57,6 +84,8 @@ function shuffle(arr) {
   return arr;
 }
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// 기록에서 같은 사람으로 묶는 기준 — 이름이 있으면 이름, 없으면 캐릭터
+const pkey = (i) => (state.players[i].name.trim() ? `n:${state.players[i].name.trim()}` : `f:${state.players[i].face}`);
 const pname = (i) => state.players[i].name.trim() || `${i + 1}번`;
 const face = (i) => FACES[state.players[i].face];
 const color = (i) => PALETTE[i % PALETTE.length];
@@ -116,6 +145,7 @@ const sfx = (() => {
 /* ================= 홈 ================= */
 const homeEl = $('#home');
 const gameEl = $('#game');
+const historyEl = $('#history');
 const stage = $('#stage');
 let runToken = 0;       // 화면을 벗어나면 진행 중인 애니메이션을 끊기 위한 값
 let currentGame = null;
@@ -133,9 +163,25 @@ function renderPlayers() {
   renderTally();
 }
 function renderTally() {
-  const total = state.players.reduce((sum, p) => sum + p.hits, 0);
-  $('#tally').hidden = total === 0;
-  $('#tally-list').innerHTML = state.players.map((p, i) => `<span>${avatar(i)}${p.hits}</span>`).join('');
+  const day = state.history[dayKey()];
+  $('#tally').hidden = !day || day.n === 0;
+  if (!day) return;
+  $('#tally-list').innerHTML = state.players.map((p, i) => `<span>${avatar(i)}${(day.r[pkey(i)] || {}).hits || 0}</span>`).join('');
+}
+// 한 판의 결과를 오늘 기록에 더한다 — 판이 끝나는 순간의 날짜로 (자정을 넘겨도 맞는 날에 쌓인다)
+function recordResult(who, game) {
+  const k = dayKey();
+  const day = state.history[k] || (state.history[k] = { n: 0, g: {}, r: {} });
+  day.n++;
+  day.g[game] = (day.g[game] || 0) + 1;
+  const seen = new Set();                                   // 이름이 같은 두 사람은 한 사람으로 센다
+  state.players.forEach((p, i) => {
+    const k = pkey(i);
+    const r = day.r[k] || (day.r[k] = { name: '', face: p.face, plays: 0, hits: 0 });
+    if (!seen.has(k)) { seen.add(k); r.name = pname(i); r.face = p.face; r.plays++; }
+    if (i === who) r.hits++;
+  });
+  persist();
 }
 const freeFace = (from = 0) => {
   const used = new Set(state.players.map((p) => p.face));
@@ -159,13 +205,15 @@ $('#players').addEventListener('click', (e) => {
   } else if (t.dataset.del !== undefined && state.players.length > MIN_P) {
     state.players.splice(+t.dataset.del, 1);
   } else if (t.dataset.add !== undefined && state.players.length < MAX_P) {
-    state.players.push({ name: '', face: freeFace(), hits: 0 });
+    state.players.push({ name: '', face: freeFace() });
   } else return;
   persist(); renderPlayers();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
 $('#tally-reset').addEventListener('click', () => {
-  state.players.forEach((p) => { p.hits = 0; });
+  const day = state.history[dayKey()];
+  if (!day || !confirm(`오늘 기록 ${day.n}판을 지울까요?`)) return;
+  delete state.history[dayKey()];
   persist(); renderTally();
 });
 const soundBtn = $('#sound');
@@ -181,6 +229,7 @@ function goHome() {
   currentGame = null;
   stage.innerHTML = '';
   gameEl.hidden = true;
+  historyEl.hidden = true;
   homeEl.hidden = false;
   renderPlayers();
   window.scrollTo(0, 0);
@@ -202,11 +251,90 @@ $('.games').addEventListener('click', (e) => {
 });
 $('#back').addEventListener('click', goHome);
 
+/* ================= 기록 화면 ================= */
+let historyRange = 'all';                                    // all | 7 | 30
+const GAME_NAMES = () => Object.fromEntries(Object.entries(GAMES).map(([k, v]) => [k, v.title]));
+function dayLabel(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const diff = Math.round((new Date(new Date().toDateString()) - dt) / 86400000);
+  const tag = diff === 0 ? '<em>오늘</em>' : diff === 1 ? '<em>어제</em>' : '';
+  const year = y !== new Date().getFullYear() ? `${y}년 ` : '';
+  return `${year}${m}월 ${d}일 (${'일월화수목금토'[dt.getDay()]})${tag}`;
+}
+// 기록 속 사람 얼굴 — 지금 참가자 중에 같은 사람이 있으면 그 색, 없으면 회색
+function histAvatar(key, faceIdx) {
+  const i = state.players.findIndex((_, j) => pkey(j) === key);
+  return `<span class="av" style="background:${i >= 0 ? color(i) : '#5a5596'}">${FACES[faceIdx]}</span>`;
+}
+function renderHistory() {
+  const days = Object.keys(state.history).filter((k) => state.history[k].n > 0).sort().reverse();
+  const body = $('#h-body');
+  if (!days.length) {
+    body.innerHTML = '<p class="h-empty">아직 기록이 없습니다.<br>게임을 하면 날짜별로 쌓입니다.</p>';
+    return;
+  }
+  const from = historyRange === 'all' ? '' : dayKey(new Date(Date.now() - (Number(historyRange) - 1) * 86400000));
+  const shown = days.filter((k) => k >= from);
+  // 기간 안의 사람별 합계
+  const sum = {};
+  let games = 0;
+  shown.slice().reverse().forEach((k) => {                   // 오래된 날부터 → 이름·얼굴은 가장 최근 것으로
+    const day = state.history[k];
+    games += day.n;
+    for (const [key, r] of Object.entries(day.r)) {
+      const t = sum[key] || (sum[key] = { key, plays: 0, hits: 0 });
+      t.name = r.name; t.face = r.face; t.plays += r.plays; t.hits += r.hits;
+    }
+  });
+  const people = Object.values(sum).sort((a, b) => b.hits - a.hits || b.hits / (b.plays || 1) - a.hits / (a.plays || 1) || a.name.localeCompare(b.name));
+  const max = Math.max(1, ...people.map((t) => t.hits));
+  const names = GAME_NAMES();
+  body.innerHTML = `
+    <div class="tabs">${[['all', '전체'], ['30', '30일'], ['7', '7일']].map(([v, t]) => `<button data-range="${v}" class="${historyRange === v ? 'on' : ''}">${t}</button>`).join('')}</div>
+    ${shown.length ? `
+    <div class="h-sum"><span>${shown.length}일 동안</span><span><b>${games}</b>판</span></div>
+    <ol class="rank-list">${people.map((t, r) => `
+      <li>
+        <span class="no">${r + 1}</span>
+        ${histAvatar(t.key, t.face)}
+        <span class="who"><b>${esc(t.name)}</b><span class="bar"><i style="width:${(t.hits / max) * 100}%"></i></span></span>
+        <span class="num"><b>${t.hits}회</b>${t.plays}판 중 ${Math.round((t.hits / (t.plays || 1)) * 100)}%</span>
+      </li>`).join('')}</ol>
+    <p class="h-title">날짜별</p>
+    ${shown.map((k) => {
+    const day = state.history[k];
+    const rows = Object.entries(day.r).sort((a, b) => b[1].hits - a[1].hits);
+    const by = Object.entries(day.g).filter(([g]) => names[g]).map(([g, c]) => `${names[g]} ${c}`).join(' · ');
+    return `
+      <div class="day-card">
+        <div class="day-head"><b>${dayLabel(k)}</b><span>${day.n}판</span></div>
+        ${by ? `<p class="day-games">${by}</p>` : ''}
+        <div class="day-people">${rows.map(([key, r]) => `<span class="${r.hits ? '' : 'zero'}">${histAvatar(key, r.face)}${esc(r.name)} ${r.hits}</span>`).join('')}</div>
+      </div>`;
+  }).join('')}` : '<p class="h-empty">이 기간에는 기록이 없습니다.</p>'}
+    <button class="h-clear" id="h-clear">기록 전체 지우기</button>`;
+}
+$('#h-body').addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-range]');
+  if (tab) { historyRange = tab.dataset.range; renderHistory(); return; }
+  if (e.target.id === 'h-clear' && confirm('지금까지의 기록을 모두 지울까요? 되돌릴 수 없습니다.')) {
+    state.history = {};
+    persist(); renderHistory();
+  }
+});
+$('#open-history').addEventListener('click', () => {
+  homeEl.hidden = true;
+  historyEl.hidden = false;
+  renderHistory();
+  window.scrollTo(0, 0);
+});
+$('#h-back').addEventListener('click', goHome);
+
 // 결과 공개 — 판이 멈춘 모습을 잠깐 보여 준 뒤 당첨자 색으로 화면 전체를 덮는다
 function showResult(who) {
   const token = runToken;
-  state.players[who].hits++;
-  persist();
+  recordResult(who, currentGame);
   setTimeout(() => {
     if (token !== runToken) return;
     sfx.reveal();
@@ -986,6 +1114,8 @@ const GAMES = {
 
 renderSound();
 renderPlayers();
+// 기록이 쌓이므로 저장 공간이 모자랄 때 브라우저가 자동으로 지우지 않게 요청한다
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist().catch(() => {}); } catch (e) { /* 무시 */ }
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   // 화면 파일은 온라인이면 늘 서버에서 새로 받으므로(sw.js) 새 버전이 깔려도 새로고침하지 않는다.

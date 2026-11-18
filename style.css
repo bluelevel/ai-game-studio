@@ -133,6 +133,37 @@ input::placeholder { color: #736ea6; font-weight: 600; }
 #tally-list span { display: inline-flex; align-items: center; gap: 4px; background: var(--panel-2); border-radius: 20px; padding: 3px 9px 3px 3px; font-weight: 900; color: var(--text); --s: 24px; }
 #tally-reset { flex: none; border: 0; background: none; color: var(--muted); font-size: 14px; text-decoration: underline; padding: 6px 2px; }
 
+.btn.wide { display: block; width: 100%; margin-top: 18px; color: var(--text); }
+
+/* ---------- 기록 ---------- */
+#h-body { display: grid; gap: 16px; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--panel); border-radius: 14px; padding: 5px; }
+.tabs button { height: 46px; border: 0; border-radius: 10px; background: none; font-size: 17px; font-weight: 800; color: var(--muted); }
+.tabs button.on { background: var(--accent); color: #1b1500; }
+.h-sum { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px; font-size: 16px; color: var(--muted); }
+.h-sum b { font-size: 26px; font-weight: 900; color: var(--text); }
+.rank-list { list-style: none; margin: 0; padding: 12px; display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.rank-list li { display: grid; grid-template-columns: 28px auto 1fr auto; align-items: center; gap: 10px; --s: 44px; }
+.rank-list .no { font-size: 18px; font-weight: 900; color: var(--muted); text-align: center; }
+.rank-list .who { min-width: 0; }
+.rank-list .who b { display: block; font-size: 19px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-list .bar { height: 8px; margin-top: 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.rank-list .bar i { display: block; height: 100%; background: #ff4d4d; border-radius: 4px; }
+.rank-list .num { text-align: right; font-size: 14px; color: var(--muted); line-height: 1.3; }
+.rank-list .num b { display: block; font-size: 22px; font-weight: 900; color: var(--text); }
+.h-title { font-size: 18px; font-weight: 800; padding: 6px 4px 0; }
+.day-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 10px; }
+.day-head { display: flex; justify-content: space-between; align-items: baseline; }
+.day-head b { font-size: 19px; font-weight: 900; }
+.day-head em { font-style: normal; font-size: 13px; font-weight: 900; color: #1b1500; background: var(--accent); border-radius: 8px; padding: 2px 7px; margin-left: 6px; vertical-align: 2px; }
+.day-head span { font-size: 15px; color: var(--muted); }
+.day-games { font-size: 14px; color: var(--muted); }
+.day-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.day-people span { display: inline-flex; align-items: center; gap: 5px; background: var(--panel-2); border-radius: 20px; padding: 3px 11px 3px 3px; font-size: 16px; font-weight: 900; --s: 30px; }
+.day-people span.zero { opacity: .45; }
+.h-empty { text-align: center; color: var(--muted); font-size: 17px; padding: 40px 0; line-height: 1.6; }
+.h-clear { justify-self: center; border: 0; background: none; color: var(--muted); font-size: 15px; text-decoration: underline; padding: 10px; }
+
 /* ---------- 게임 공통 ---------- */
 .game-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .game-head h2 { font-size: 24px; font-weight: 900; }
