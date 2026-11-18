@@ -362,7 +362,7 @@ function ladderGame(token) {
       <div class="board"><canvas id="ladder"></canvas></div>
       <button class="btn primary big" id="l-go">출발!</button>`;
     const msg = $('#l-msg');
-    const W = stage.clientWidth;
+    const W = $('.board', stage).clientWidth;                // 테두리 안쪽 폭 — 화면에 보이는 폭과 같아야 찌그러지지 않는다
     const H = Math.max(400, Math.min(540, Math.round(window.innerHeight * 0.58)));
     const ctx = setupCanvas($('#ladder'), W, H);
     const ar = n <= 5 ? 22 : n <= 7 ? 18 : 14;              // 캐릭터 반지름 — 인원이 적을수록 크게
@@ -553,42 +553,63 @@ function rouletteGame(token) {
   const R = C - 22;                                   // 판 반지름 (바깥은 전구 테두리)
   const fr = Math.min(28, R * Math.sin(a / 2) * 0.5); // 칸 안 얼굴 크기
 
+  // 안 변하는 부분은 미리 한 번만 그려 두고, 매 프레임에는 붙이기만 한다
+  const dpr = window.devicePixelRatio || 1;
+  function layer(w, h, paint) {
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
+    const g = c.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    paint(g);
+    return c;
+  }
+  // 테두리와 전구 — 깜빡임은 두 가지 모양뿐이라 둘 다 만들어 둔다 (판과 함께 돌지 않는다)
+  const rims = [0, 1].map((phase) => layer(size, size, (g) => {
+    g.beginPath(); g.arc(C, C, C - 2, 0, TAU);
+    g.fillStyle = '#2a2656'; g.fill();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 4; g.stroke();
+    for (let k = 0; k < 20; k++) {
+      const on = (k + phase) % 2 === 0;
+      const t = (k * TAU) / 20;
+      g.beginPath(); g.arc(C + (R + 10) * Math.cos(t), C + (R + 10) * Math.sin(t), on ? 5.5 : 4.5, 0, TAU);
+      g.shadowColor = '#ffd23f'; g.shadowBlur = on ? 10 : 0;
+      g.fillStyle = on ? '#fffbe0' : '#b8900a'; g.fill();
+    }
+  }));
+  // 칸 안 얼굴 (판이 돌아도 늘 바로 선 채로)
+  const fs = Math.ceil(fr * 2 + 2);
+  const faces = Array.from({ length: n }, (_, i) => layer(fs, fs, (g) => {
+    g.beginPath(); g.arc(fs / 2, fs / 2, fr, 0, TAU);
+    g.fillStyle = '#ffffffe6'; g.fill();
+    g.font = `${Math.round(fr * 1.2)}px system-ui, sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#16122e';
+    g.fillText(face(i), fs / 2, fs / 2 + fr * 0.08);
+  }));
+  // 입체감을 주는 가장자리 그늘과 가운데 축
+  const cover = layer(size, size, (g) => {
+    const shade = g.createRadialGradient(C, C, R * 0.55, C, C, R);
+    shade.addColorStop(0, '#00000000'); shade.addColorStop(1, '#00000055');
+    g.beginPath(); g.arc(C, C, R, 0, TAU); g.fillStyle = shade; g.fill();
+    g.beginPath(); g.arc(C, C, 24, 0, TAU);
+    g.fillStyle = '#14122b'; g.fill();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 5; g.stroke();
+  });
+
   function draw() {
     ctx.clearRect(0, 0, size, size);
-    // 테두리와 전구 (판과 함께 돌지 않는다)
-    ctx.beginPath(); ctx.arc(C, C, C - 2, 0, TAU);
-    ctx.fillStyle = '#2a2656'; ctx.fill();
-    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 4; ctx.stroke();
-    for (let k = 0; k < 20; k++) {
-      const on = (k + lit) % 2 === 0;
-      const t = (k * TAU) / 20;
-      ctx.beginPath(); ctx.arc(C + (R + 10) * Math.cos(t), C + (R + 10) * Math.sin(t), on ? 5.5 : 4.5, 0, TAU);
-      ctx.shadowColor = '#ffd23f'; ctx.shadowBlur = on ? 10 : 0;
-      ctx.fillStyle = on ? '#fffbe0' : '#b8900a'; ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-    // 칸
-    for (let i = 0; i < n; i++) {
+    ctx.drawImage(rims[lit % 2], 0, 0, size, size);
+    ctx.strokeStyle = '#14122b'; ctx.lineWidth = 3;
+    for (let i = 0; i < n; i++) {                      // 칸은 선명하도록 매번 벡터로 그린다
       const a0 = rot - Math.PI / 2 + i * a;
       ctx.beginPath(); ctx.moveTo(C, C); ctx.arc(C, C, R, a0, a0 + a); ctx.closePath();
-      ctx.fillStyle = color(i); ctx.fill();
-      ctx.strokeStyle = '#14122b'; ctx.lineWidth = 3; ctx.stroke();
-      const am = a0 + a / 2;                           // 얼굴은 판이 돌아도 늘 바로 선 채로
-      const fx = C + R * 0.64 * Math.cos(am), fy = C + R * 0.64 * Math.sin(am);
-      ctx.beginPath(); ctx.arc(fx, fy, fr, 0, TAU);
-      ctx.fillStyle = '#ffffffe6'; ctx.fill();
-      ctx.font = `${Math.round(fr * 1.2)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#16122e';
-      ctx.fillText(face(i), fx, fy + fr * 0.08);
+      ctx.fillStyle = color(i); ctx.fill(); ctx.stroke();
     }
-    // 입체감을 주는 가장자리 그늘과 가운데 축
-    const shade = ctx.createRadialGradient(C, C, R * 0.55, C, C, R);
-    shade.addColorStop(0, '#00000000'); shade.addColorStop(1, '#00000055');
-    ctx.beginPath(); ctx.arc(C, C, R, 0, TAU); ctx.fillStyle = shade; ctx.fill();
-    ctx.beginPath(); ctx.arc(C, C, 24, 0, TAU);
-    ctx.fillStyle = '#14122b'; ctx.fill();
-    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 5; ctx.stroke();
+    for (let i = 0; i < n; i++) {
+      const am = rot - Math.PI / 2 + (i + 0.5) * a;
+      ctx.drawImage(faces[i], C + R * 0.64 * Math.cos(am) - fs / 2, C + R * 0.64 * Math.sin(am) - fs / 2, fs, fs);
+    }
+    ctx.drawImage(cover, 0, 0, size, size);
   }
 
   btn.addEventListener('click', () => {
@@ -723,10 +744,10 @@ function raceGame(token) {
   const dusts = lanes.map((l) => $('.dust', l));
   const ranks = lanes.map((l) => $('.rank', l));
   const rw = runnerEls[0].offsetWidth;
+  const laneW = lanes[0].clientWidth;                   // 레인 폭은 모두 같고 화면이 세로 고정이라 한 번만 잰다
 
   function place(p, pos) {
-    const W = lanes[p].clientWidth;
-    const front = rw + 6 + pos * (W - 56 - rw - 6);     // 달리는 캐릭터의 앞쪽 끝 — pos 1 이면 결승선
+    const front = rw + 6 + pos * (laneW - 56 - rw - 6); // 달리는 캐릭터의 앞쪽 끝 — pos 1 이면 결승선
     runnerEls[p].style.transform = `translate(${front - rw}px, -50%)`;
     dusts[p].style.transform = `translateX(${front - rw * 1.75}px)`;
   }
@@ -800,14 +821,8 @@ renderSound();
 renderPlayers();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  // 새 버전의 오프라인 파일이 자리를 잡으면 한 번 새로고침해서 바로 최신 화면으로 바꾼다
-  const hadController = !!navigator.serviceWorker.controller;
-  let reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloaded) return;
-    reloaded = true;
-    location.reload();
-  });
+  // 화면 파일은 온라인이면 늘 서버에서 새로 받으므로(sw.js) 새 버전이 깔려도 새로고침하지 않는다.
+  // 새로고침하면 진행 중인 판이 날아간다.
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
     .then((reg) => {
       // 앱을 켜 둔 채 다시 화면으로 돌아왔을 때도 새 버전이 있는지 확인
