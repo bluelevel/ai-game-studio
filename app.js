@@ -800,5 +800,18 @@ renderSound();
 renderPlayers();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => { /* 오프라인 지원만 빠짐 */ });
+  // 새 버전의 오프라인 파일이 자리를 잡으면 한 번 새로고침해서 바로 최신 화면으로 바꾼다
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      // 앱을 켜 둔 채 다시 화면으로 돌아왔을 때도 새 버전이 있는지 확인
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    })
+    .catch(() => { /* 오프라인 지원만 빠짐 */ });
 }
