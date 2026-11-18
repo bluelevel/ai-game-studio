@@ -17,7 +17,9 @@ const SURPRISE = { ladder: 25, roulette: 25, race: 25, chairs: 25 };
 function dayKey(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-// 저장 모양: { players: [{name, face}], sound, history: { 'YYYY-MM-DD': { n: 판 수, g: {게임: 판 수}, r: {사람키: {name, face, plays, hits}} } } }
+// 저장 모양: { players: [{name, face}], sound, history: { 'YYYY-MM-DD': 하루 기록 } }
+// 하루 기록 = { n: 판 수, g: {게임: 판 수}, r: {사람키: {name, face, plays, hits}}, games: [{m: 분(0~1439), g: 게임, p: [사람키], l: 당첨 사람키}] }
+// r·g·n 은 합계, games 는 판별 기록(판 하나만 지울 때 씀). 예전 버전에서 온 날은 games 가 없다.
 // 기록은 지우기 전까지 계속 쌓인다. 확률과는 아무 상관이 없다.
 function loadState() {
   const st = { players: [], sound: true, history: {} };
@@ -42,7 +44,8 @@ function loadState() {
           const face = Number.isInteger(v.face) && v.face >= 0 && v.face < FACES.length ? v.face : 0;
           r[k] = { name: String(v.name || ''), face, plays: Number(v.plays) || 0, hits: Number(v.hits) || 0 };
         }
-        st.history[day] = { n: Number(rec.n) || 0, g: rec.g && typeof rec.g === 'object' ? { ...rec.g } : {}, r };
+        const games = Array.isArray(rec.games) ? rec.games.filter((e) => e && Array.isArray(e.p) && typeof e.l === 'string') : [];
+        st.history[day] = { n: Number(rec.n) || 0, g: rec.g && typeof rec.g === 'object' ? { ...rec.g } : {}, r, games };
       }
     }
     // 예전 버전(오늘 전적만 hits 로 저장)에서 넘어온 경우 — 오늘 것이면 기록으로 옮긴다
@@ -55,7 +58,7 @@ function loadState() {
           const k = p.name.trim() ? `n:${p.name.trim()}` : `f:${p.face}`;
           r[k] = { name: p.name.trim() || `${i + 1}번`, face: p.face, plays: total, hits: p.hits };
         });
-        st.history[dayKey(d)] = { n: total, g: {}, r };
+        st.history[dayKey(d)] = { n: total, g: {}, r, games: [] };
       }
     }
   }
@@ -171,7 +174,8 @@ function renderTally() {
 // 한 판의 결과를 오늘 기록에 더한다 — 판이 끝나는 순간의 날짜로 (자정을 넘겨도 맞는 날에 쌓인다)
 function recordResult(who, game) {
   const k = dayKey();
-  const day = state.history[k] || (state.history[k] = { n: 0, g: {}, r: {} });
+  const day = state.history[k] || (state.history[k] = { n: 0, g: {}, r: {}, games: [] });
+  const now = new Date();
   day.n++;
   day.g[game] = (day.g[game] || 0) + 1;
   const seen = new Set();                                   // 이름이 같은 두 사람은 한 사람으로 센다
@@ -181,6 +185,21 @@ function recordResult(who, game) {
     if (!seen.has(k)) { seen.add(k); r.name = pname(i); r.face = p.face; r.plays++; }
     if (i === who) r.hits++;
   });
+  day.games.push({ m: now.getHours() * 60 + now.getMinutes(), g: game, p: [...seen], l: pkey(who) });
+  persist();
+}
+// 판 하나 지우기 — 그 판이 더했던 만큼 합계에서 뺀다
+function deleteGame(dayK, idx) {
+  const day = state.history[dayK];
+  const e = day && day.games[idx];
+  if (!e) return;
+  day.n--;
+  if (day.g[e.g] && --day.g[e.g] <= 0) delete day.g[e.g];
+  e.p.forEach((k) => { if (day.r[k]) day.r[k].plays--; });
+  if (day.r[e.l]) day.r[e.l].hits--;
+  for (const k of Object.keys(day.r)) if (day.r[k].plays <= 0) delete day.r[k];
+  day.games.splice(idx, 1);
+  if (day.n <= 0) delete state.history[dayK];
   persist();
 }
 const freeFace = (from = 0) => {
@@ -253,6 +272,7 @@ $('#back').addEventListener('click', goHome);
 
 /* ================= 기록 화면 ================= */
 let historyRange = 'all';                                    // all | 7 | 30
+const openDays = new Set();                                  // 펼쳐 둔 날짜 카드
 const GAME_NAMES = () => Object.fromEntries(Object.entries(GAMES).map(([k, v]) => [k, v.title]));
 function dayLabel(key) {
   const [y, m, d] = key.split('-').map(Number);
@@ -306,23 +326,58 @@ function renderHistory() {
     const day = state.history[k];
     const rows = Object.entries(day.r).sort((a, b) => b[1].hits - a[1].hits);
     const by = Object.entries(day.g).filter(([g]) => names[g]).map(([g, c]) => `${names[g]} ${c}`).join(' · ');
+    const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const list = day.games.map((e, idx) => ({ e, idx })).reverse();     // 최근 판부터
+    const old = day.n - day.games.length;                               // 예전 버전에서 온, 판별 기록이 없는 판
     return `
-      <div class="day-card">
-        <div class="day-head"><b>${dayLabel(k)}</b><span>${day.n}판</span></div>
-        ${by ? `<p class="day-games">${by}</p>` : ''}
-        <div class="day-people">${rows.map(([key, r]) => `<span class="${r.hits ? '' : 'zero'}">${histAvatar(key, r.face)}${esc(r.name)} ${r.hits}</span>`).join('')}</div>
-      </div>`;
+      <details class="day-card" data-day="${k}" ${openDays.has(k) ? 'open' : ''}>
+        <summary>
+          <div class="day-head"><b>${dayLabel(k)}</b><span>${day.n}판 <i class="chev">▾</i></span></div>
+          ${by ? `<p class="day-games">${by}</p>` : ''}
+          <div class="day-people">${rows.map(([key, r]) => `<span class="${r.hits ? '' : 'zero'}">${histAvatar(key, r.face)}${esc(r.name)} ${r.hits}</span>`).join('')}</div>
+        </summary>
+        <ul class="game-log">${list.map(({ e, idx }) => {
+    const r = day.r[e.l] || { name: '?', face: 0 };
+    return `<li><span class="t">${hm(e.m)}</span><span class="g">${names[e.g] || ''}</span><span class="w">${histAvatar(e.l, r.face)}<b>${esc(r.name)}</b></span><button class="del-game" data-del-game="${idx}" aria-label="이 판 지우기">✕</button></li>`;
+  }).join('')}${old > 0 ? `<li class="old">이전 버전 기록 ${old}판 — 판별로는 지울 수 없음</li>` : ''}</ul>
+        <button class="del-day" data-del-day="${k}">이 날 기록 지우기</button>
+      </details>`;
   }).join('')}` : '<p class="h-empty">이 기간에는 기록이 없습니다.</p>'}
     <button class="h-clear" id="h-clear">기록 전체 지우기</button>`;
 }
 $('#h-body').addEventListener('click', (e) => {
   const tab = e.target.closest('[data-range]');
   if (tab) { historyRange = tab.dataset.range; renderHistory(); return; }
+  const card = e.target.closest('[data-day]');
+  const dk = card && card.dataset.day;
+  const g = e.target.closest('[data-del-game]');
+  if (g) {
+    const day = state.history[dk];
+    const ev = day.games[+g.dataset.delGame];
+    const who = (day.r[ev.l] || {}).name || '?';
+    const [, mo, da] = dk.split('-').map(Number);
+    const hm = `${String(Math.floor(ev.m / 60)).padStart(2, '0')}:${String(ev.m % 60).padStart(2, '0')}`;
+    if (confirm(`${mo}월 ${da}일 ${hm} ${GAME_NAMES()[ev.g] || ''} — ${who} 당첨\n이 판을 지울까요?`)) { deleteGame(dk, +g.dataset.delGame); renderHistory(); renderTally(); }
+    return;
+  }
+  if (e.target.closest('[data-del-day]')) {
+    const [, mo, da] = dk.split('-').map(Number);
+    if (confirm(`${mo}월 ${da}일 기록 ${state.history[dk].n}판을 모두 지울까요?`)) {
+      delete state.history[dk];
+      openDays.delete(dk);
+      persist(); renderHistory(); renderTally();
+    }
+    return;
+  }
   if (e.target.id === 'h-clear' && confirm('지금까지의 기록을 모두 지울까요? 되돌릴 수 없습니다.')) {
     state.history = {};
-    persist(); renderHistory();
+    persist(); renderHistory(); renderTally();
   }
 });
+$('#h-body').addEventListener('toggle', (e) => {                // 펼침 상태를 기억해 다시 그려도 유지
+  const d = e.target.dataset && e.target.dataset.day;
+  if (d) { if (e.target.open) openDays.add(d); else openDays.delete(d); }
+}, true);
 $('#open-history').addEventListener('click', () => {
   homeEl.hidden = true;
   historyEl.hidden = false;
