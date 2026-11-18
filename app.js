@@ -463,6 +463,8 @@ function ladderGame(token) {
     await new Promise((res) => $('#l-go').addEventListener('click', res, { once: true }));
     if (token !== runToken) return;
     sfx.go();
+    revealed.fill(true);                                                   // 출발과 동시에 아래 당첨/통과를 모두 공개
+    draw(0, -1);
     let skip = false;
     const go = $('#l-go');
     go.textContent = '결과 바로 보기';
@@ -512,20 +514,18 @@ function ladderGame(token) {
         await descend(p, full, 0, pathLen(full), hasExt ? 3000 : 2400);
       }
       if (stopped()) break;
-      revealed[paths[p].end] = true;
       done = p + 1;
       draw(done, -1);
-      if (p === loser) break;                                             // 당첨 상자가 열리면 더 볼 것이 없다
+      if (p === loser) break;                                             // 당첨 자리에 도착하면 더 볼 것이 없다
       sfx.pass();
       buzz(15);
       await sleep(550);
     }
     if (token !== runToken) return;
     if (hasExt) ext = 1;
-    revealed.fill(true);
     draw(done > loser ? done : n, -1);
     go.remove();
-    msg.innerHTML = `${named(loser)} 상자에서 당첨!`;
+    msg.innerHTML = `${named(loser)} 당첨!`;
     showResult(loser);
   }
 
