@@ -1,5 +1,6 @@
 # 복불복 앱
-내 갤럭시 S26+에서만 쓰는 개인용 복불복 게임 웹앱(PWA).
+친구들과 같이 쓰는 복불복 게임 웹앱(PWA). 내 폰은 갤럭시 S26+이고, 친구들은 아이폰(사파리 → 홈 화면에 추가)으로도 설치해서 쓴다.
+- 안드로이드 크롬과 iOS 사파리 모두에서 동작해야 한다 (iOS는 진동이 없으므로 진동에 기대는 연출은 만들지 않는다)
 - 저장소: GitHub bluelevel/ai-game-studio (main 브랜치)
 - 실행 주소: https://bluelevel.github.io/ai-game-studio/ (GitHub Pages)
 - 구조: index.html, style.css, app.js, sw.js — 빌드 없는 순수 HTML/CSS/JS
