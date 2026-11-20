@@ -826,7 +826,7 @@ function rouletteGame(token) {
         rot = to1 * (1 - Math.pow(1 - t, 3));
         end = !encore && t >= 1;
       }
-      lit = Math.floor((now - t0) / 170);
+      lit = Math.max(0, Math.floor((now - t0) / 170));   // 첫 프레임 시각이 누른 시각보다 살짝 앞설 수 있어 음수가 되지 않게
       const tick = Math.floor(mod(-rot) / a);
       if (tick !== lastTick) {
         lastTick = tick;
@@ -1089,7 +1089,7 @@ function chairsGame(token) {
 
     (function frame(now) {
       if (token !== runToken) { music(false); return; }
-      const dt = Math.min(50, now - last);
+      const dt = Math.max(0, Math.min(50, now - last));   // 첫 프레임 시각이 앞설 수 있어 음수 방지
       last = now;
       let pos;
       let note = '♪';
