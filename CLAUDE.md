@@ -3,8 +3,9 @@
 - 안드로이드 크롬과 iOS 사파리 모두에서 동작해야 한다 (iOS는 진동이 없으므로 진동에 기대는 연출은 만들지 않는다)
 - 저장소: GitHub bluelevel/ai-game-studio (main 브랜치)
 - 실행 주소: https://bluelevel.github.io/ai-game-studio/ (GitHub Pages)
-- 구조: index.html, style.css, app.js, sw.js — 빌드 없는 순수 HTML/CSS/JS
+- 구조: index.html, style.css, app.js(복불복 게임), pet.js(말랑이 키우기), sw.js — 빌드 없는 순수 HTML/CSS/JS
 - 게임: 사다리 타기, 룰렛, 달리기 경주, 의자 뺏기. 참가자 2~10명, 한 판에 1명 당첨
+- 말랑이 키우기: 복불복이 아니라 혼자 키우는 오리지널 펫(다마고치 같은 장르). 공정성 원칙은 복불복 게임에만 해당한다
 
 ## 작업 방식
 - 작업을 시작하면 저장소를 이 세션에 붙이고 클론해서 작업한다

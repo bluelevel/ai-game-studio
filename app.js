@@ -249,8 +249,10 @@ function goHome() {
   stage.innerHTML = '';
   gameEl.hidden = true;
   historyEl.hidden = true;
+  $('#pet').hidden = true;
   homeEl.hidden = false;
   renderPlayers();
+  if (typeof renderPetCard === 'function') renderPetCard();
   window.scrollTo(0, 0);
 }
 function startGame(id) {
