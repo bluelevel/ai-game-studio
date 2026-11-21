@@ -39,8 +39,6 @@
       <button class="game-card" data-game="chairs"><span class="emoji">🪑</span><span><b>의자 뺏기</b><small>음악이 멈추면 앉기, 못 앉으면 당첨</small></span></button>
     </div>
 
-    <button id="open-pet" class="pet-card"><span class="emoji">🌱</span><span><b>말랑이 키우기</b><small id="pet-card-sub"></small></span></button>
-
     <section id="tally" hidden>
       <b>오늘의 전적</b>
       <div id="tally-list"></div>
@@ -58,24 +56,6 @@
     <div id="h-body"></div>
   </section>
 
-  <!-- 말랑이 키우기 -->
-  <section id="pet" class="screen" hidden>
-    <header class="game-head">
-      <button id="pet-back" class="icon-btn" aria-label="뒤로">←</button>
-      <h2><button id="pet-name" class="pet-name" aria-label="이름 바꾸기"></button></h2>
-      <span id="pet-age" class="pet-age"></span>
-    </header>
-    <div id="pet-room" class="pet-room">
-      <p id="pet-say" class="pet-say"></p>
-      <div id="pet-body" class="pet-body"></div>
-      <div id="pet-poops"></div>
-    </div>
-    <div id="pet-stats" class="pet-stats"></div>
-    <div id="pet-actions" class="pet-actions"></div>
-    <p class="hint">말랑이를 누르면 쓰다듬어요 · 이름을 누르면 바꿀 수 있어요</p>
-    <button id="pet-reset" class="h-clear">새 알 받기</button>
-  </section>
-
   <!-- 게임 화면 -->
   <section id="game" class="screen" hidden>
     <header class="game-head">
@@ -87,6 +67,5 @@
 
 </main>
 <script src="app.js"></script>
-<script src="pet.js"></script>
 </body>
 </html>

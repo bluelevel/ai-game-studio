@@ -249,10 +249,8 @@ function goHome() {
   stage.innerHTML = '';
   gameEl.hidden = true;
   historyEl.hidden = true;
-  $('#pet').hidden = true;
   homeEl.hidden = false;
   renderPlayers();
-  if (typeof renderPetCard === 'function') renderPetCard();
   window.scrollTo(0, 0);
 }
 function startGame(id) {
@@ -1164,6 +1162,8 @@ const GAMES = {
 
 renderSound();
 renderPlayers();
+// 예전에 있던 '말랑이 키우기' 데이터가 폰에 남아 있으면 지운다
+try { localStorage.removeItem('bokbulbok-pet-v1'); } catch (e) { /* 무시 */ }
 // 기록이 쌓이므로 저장 공간이 모자랄 때 브라우저가 자동으로 지우지 않게 요청한다
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist().catch(() => {}); } catch (e) { /* 무시 */ }
 
